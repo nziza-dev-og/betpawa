@@ -17,7 +17,7 @@ function FlyingObject({ multiplier, gamePhase }: FlyingObjectProps) {
   const groupRef = useRef<THREE.Group>(null!);
   const trailRef = useRef<THREE.Group>(null!);
   const lastPosition = useRef(new THREE.Vector3());
-  const _axis = new THREE.Vector3(0, 1, 0); // Re-usable axis for quaternion
+  let _axis = new THREE.Vector3(0, 1, 0); // Re-usable axis for quaternion
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
@@ -188,7 +188,7 @@ const GameCanvasComponent = () => {
       )}
       
       {(canvasGameStatus === 'idle' || canvasGameStatus === 'starting' || canvasGameStatus === 'betting') && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div role="status" aria-live="polite" className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
           <div className="text-center p-4 rounded-lg bg-background/30">
             <div className="text-lg md:text-xl font-bold mb-1 md:mb-2 text-white">
               {canvasGameStatus === 'betting' ? "Place Your Bets!" : 
@@ -203,7 +203,7 @@ const GameCanvasComponent = () => {
       )}
       
       {canvasGameStatus === 'crashed' && (
-        <div className="absolute inset-0 flex items-center justify-center bg-red-900/40 backdrop-blur-sm">
+        <div role="status" aria-live="polite" className="absolute inset-0 flex items-center justify-center bg-red-900/40 backdrop-blur-sm">
           <div className="text-center p-4 rounded-lg bg-background/30">
             <div className="text-2xl md:text-3xl font-bold text-red-400 mb-2 animate-pulse">
               CRASHED @ {gameState.multiplier.toFixed(2)}x
@@ -217,4 +217,3 @@ const GameCanvasComponent = () => {
 };
 
 export default GameCanvasComponent;
-
