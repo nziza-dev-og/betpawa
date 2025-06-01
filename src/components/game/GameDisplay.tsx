@@ -1,4 +1,5 @@
-import { Rocket, XCircle, CheckCircle, Timer } from 'lucide-react';
+
+import { Plane, XCircle, CheckCircle, Timer } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 
 interface GameDisplayProps {
@@ -31,7 +32,7 @@ export function GameDisplay({ multiplier, gamePhase, timeRemaining }: GameDispla
     case 'playing':
       statusText = "Flying!";
       textColorClass = "text-primary";
-      IconComponent = Rocket;
+      IconComponent = Plane; // Changed from Rocket
       break;
     case 'crashed':
       statusText = `Crashed @ ${multiplier.toFixed(2)}x`;
@@ -51,8 +52,8 @@ export function GameDisplay({ multiplier, gamePhase, timeRemaining }: GameDispla
         {IconComponent && gamePhase !== 'playing' && (
           <IconComponent className={`h-16 w-16 mb-4 ${textColorClass} opacity-80`} />
         )}
-        {gamePhase === 'playing' && (
-           <Rocket className={`h-20 w-20 mb-6 text-primary animate-fly`} data-ai-hint="rocket space" />
+        {gamePhase === 'playing' && IconComponent && ( // Ensure IconComponent is defined for playing phase
+           <IconComponent className={`h-20 w-20 mb-6 text-primary animate-fly`} data-ai-hint="plane sky" />
         )}
         
         {showMultiplier ? (
