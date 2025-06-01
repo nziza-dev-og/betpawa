@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -55,25 +56,25 @@ body {
 
   .dark {
     /* For Skytrax, we are primarily designing for a light theme. Dark theme can be adjusted if needed. */
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
+    --background: 240 10% 3.9%; /* Dark Blue-Gray */
+    --foreground: 0 0% 98%; /* White */
+    --card: 240 5.9% 10%; /* Slightly lighter Dark Blue-Gray */
     --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
+    --popover: 240 5.9% 10%;
     --popover-foreground: 0 0% 98%;
-    --primary: 197 71% 73%; /* Sky Blue - can be adjusted for dark mode */
-    --primary-foreground: 197 50% 20%; 
-    --secondary: 0 0% 14.9%;
+    --primary: 210 40% 96.1%; /* Sky Blue - Lightened for dark mode contrast */
+    --primary-foreground: 217 91% 60.2%; /* Brighter Blue for text on dark primary */ 
+    --secondary: 240 3.7% 15.9%; /* Darker shade */
     --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 39 100% 50%; /* Yellow-Orange - can be adjusted for dark mode */
-    --accent-foreground: 39 100% 10%;
-    --destructive: 0 62.8% 30.6%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%; /* Lighter muted text */
+    --accent: 48 96.5% 53.1%; /* Brighter Yellow-Orange for dark mode */
+    --accent-foreground: 48 95% 15.1%; /* Darker text for accent */
+    --destructive: 0 72.2% 50.6%; /* Dark mode destructive red */
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 197 71% 73%; /* Ring adjusted */
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 210 40% 96.1%; /* Ring adjusted to match primary */
     
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -94,3 +95,14 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* For hiding scrollbars */
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+.scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+    
