@@ -1,159 +1,27 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { GameDisplay } from '@/components/game/GameDisplay';
+import { useState, useEffect } from 'react';
+import GameCanvas from '@/components/game/GameCanvas'; // Updated import
 import { BetControls } from '@/components/game/BetControls';
 import { WalletDisplay } from '@/components/wallet/WalletDisplay';
 import { DepositModal } from '@/components/wallet/DepositModal';
 import { useAuth, type UserProfile } from '@/hooks/use-auth';
 import { useToast } from "@/hooks/use-toast";
-import { db, doc, updateDoc, increment, addDoc, collection, serverTimestamp } from '@/lib/firebase';
+import { db, doc, updateDoc, increment } from '@/lib/firebase'; // Removed unused imports
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { GameProvider, useGame } from '@/contexts/GameContext'; // Import GameProvider and useGame
 
-// Updated list of possible crash multipliers for more variety
-const CRASH_POINTS = [1.00, 1.01, 1.05, 1.10, 1.15, 1.20, 1.30, 1.40, 1.50, 1.75, 2.00, 2.25, 2.50, 3.00, 4.00, 5.00, 7.50, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 500, 1000];
-const BETTING_DURATION = 10; // seconds
-const IDLE_DURATION = 5; // seconds
-const STARTING_DURATION = 3; // seconds
-const CRASHED_DURATION = 5; // seconds
+// BetRecord definition is now in GameContext.tsx, ensure consistency or import if needed elsewhere
+// For SkytraxPage, we might not need BetRecord directly if GameContext handles it all.
 
-type GamePhase = 'idle' | 'starting' | 'betting' | 'playing' | 'crashed';
-
-interface BetRecord {
-  id?: string;
-  userId: string;
-  amount: number;
-  status: 'placed' | 'cashed_out' | 'lost';
-  cashOutMultiplier?: number;
-  winnings?: number;
-  createdAt: any; // Firestore serverTimestamp
-  roundId: string; // To identify the game round
-}
-
-export default function SkytraxPage() {
+function SkytraxPageContent() {
   const { user, userProfile, loadingAuth, authError, setUserProfile } = useAuth();
   const { toast } = useToast();
+  const gameContext = useGame(); // Access game state and actions
 
-  const [gamePhase, setGamePhase] = useState<GamePhase>('idle');
-  const [multiplier, setMultiplier] = useState(1.00);
-  const [targetMultiplier, setTargetMultiplier] = useState(0);
-  
-  const [currentBet, setCurrentBet] = useState<BetRecord | null>(null);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(0);
-
-  const gameLoopTimer = useRef<NodeJS.Timeout | null>(null);
-  const animationFrameId = useRef<number | null>(null);
-  const gameStartTime = useRef<number>(0);
-  const currentRoundId = useRef<string>('');
-
-
-  const resetGameState = useCallback(() => {
-    setMultiplier(1.00);
-    // currentBet is reset per user action or round end
-    // targetMultiplier is set at start of 'playing'
-  }, []);
-
-  const startNewRound = useCallback(() => {
-    console.log("Starting new round (idle phase)");
-    resetGameState();
-    currentRoundId.current = doc(collection(db, 'gameRounds')).id; // Generate a new round ID
-    setGamePhase('idle');
-    setTimeRemaining(IDLE_DURATION);
-  }, [resetGameState]);
-
-  useEffect(() => {
-    startNewRound(); // Initialize first round
-    return () => {
-      if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-    };
-  }, [startNewRound]);
-
-
-  // Game Phase Timer Logic
-  useEffect(() => {
-    if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
-
-    if (timeRemaining > 0) {
-      gameLoopTimer.current = setTimeout(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
-    } else {
-      // Time's up, transition to next phase
-      if (gamePhase === 'idle') {
-        console.log("Transitioning from idle to starting");
-        setGamePhase('starting');
-        setTimeRemaining(STARTING_DURATION);
-      } else if (gamePhase === 'starting') {
-        console.log("Transitioning from starting to betting");
-        setGamePhase('betting');
-        setTimeRemaining(BETTING_DURATION);
-      } else if (gamePhase === 'betting') {
-        console.log("Transitioning from betting to playing");
-        setGamePhase('playing');
-        const randomCrashPoint = CRASH_POINTS[Math.floor(Math.random() * CRASH_POINTS.length)];
-        setTargetMultiplier(randomCrashPoint);
-        setMultiplier(1.00); // Ensure multiplier starts at 1.00 for playing phase
-        gameStartTime.current = Date.now();
-      } else if (gamePhase === 'crashed') {
-        console.log("Transitioning from crashed to idle (new round)");
-        startNewRound();
-      }
-    }
-    return () => {
-      if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
-    };
-  }, [gamePhase, timeRemaining, startNewRound]);
-
-
-  // Multiplier Animation Logic
-  useEffect(() => {
-    if (gamePhase === 'playing') {
-      const animateMultiplier = () => {
-        setMultiplier(prevMultiplier => {
-          if (prevMultiplier >= targetMultiplier) {
-            // CRASH!
-            setMultiplier(targetMultiplier); // Ensure UI shows exact crash point
-            setGamePhase('crashed');
-            setTimeRemaining(CRASHED_DURATION);
-            if (currentBet && currentBet.status === 'placed') {
-              // Bet lost
-              setCurrentBet(prev => prev ? { ...prev, status: 'lost' } : null);
-              // Update bet in Firestore (optional, or do it when bet is placed)
-              toast({ title: "Too Late!", description: `Crashed at ${targetMultiplier.toFixed(2)}x. Better luck next time!`, variant: "destructive" });
-            }
-            return targetMultiplier; 
-          }
-          
-          const now = Date.now();
-          const elapsed = (now - gameStartTime.current) / 1000; // seconds
-          let newMultiplier = 1 + 0.1 * elapsed + 0.05 * Math.pow(elapsed, 1.5);
-          newMultiplier = Math.max(prevMultiplier, newMultiplier); 
-          newMultiplier = parseFloat(newMultiplier.toFixed(2));
-
-
-          if (newMultiplier >= targetMultiplier) {
-             return targetMultiplier; 
-          }
-          return newMultiplier;
-        });
-        animationFrameId.current = requestAnimationFrame(animateMultiplier);
-      };
-      animationFrameId.current = requestAnimationFrame(animateMultiplier);
-    } else {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-        animationFrameId.current = null;
-      }
-    }
-    return () => {
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-    };
-  }, [gamePhase, targetMultiplier, currentBet, toast]);
-
 
   const handleDeposit = async (amount: number) => {
     if (!user || !userProfile) {
@@ -165,7 +33,11 @@ export default function SkytraxPage() {
       await updateDoc(userDocRef, {
         walletBalance: increment(amount)
       });
-      setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + amount } : null);
+      // userProfile state update is now handled by GameProvider if bet/cashout involves it,
+      // or still here for direct deposits.
+      if (setUserProfile) {
+          setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + amount } : null);
+      }
       toast({ title: "Deposit Successful", description: `${amount} COINS added to your wallet.` });
     } catch (error) {
       console.error("Deposit error:", error);
@@ -174,77 +46,7 @@ export default function SkytraxPage() {
     }
   };
 
-  const handleBet = async (amount: number) => {
-    if (!user || !userProfile) {
-      toast({ title: "Login Required", description: "Please log in to place a bet.", variant: "destructive" });
-      return;
-    }
-    if (userProfile.walletBalance < amount) {
-      toast({ title: "Insufficient Funds", description: "Not enough balance to place this bet.", variant: "destructive" });
-      return;
-    }
-    if (gamePhase !== 'betting') {
-        toast({ title: "Betting Closed", description: "You can only bet during the betting phase.", variant: "destructive" });
-        return;
-    }
-
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        walletBalance: increment(-amount)
-      });
-      
-      const newBet: BetRecord = {
-        userId: user.uid,
-        amount,
-        status: 'placed',
-        createdAt: serverTimestamp(),
-        roundId: currentRoundId.current,
-      };
-      
-      setCurrentBet(newBet);
-      setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance - amount } : null);
-      toast({ title: "Bet Placed!", description: `Your bet of ${amount} COINS is active.` });
-    } catch (error) {
-      console.error("Bet placement error:", error);
-      toast({ title: "Bet Failed", description: "Could not place your bet.", variant: "destructive" });
-    }
-  };
-
-  const handleCashout = async () => {
-    if (!user || !userProfile || !currentBet || currentBet.status !== 'placed') {
-      toast({ title: "Cashout Error", description: "No active bet to cash out.", variant: "destructive" });
-      return;
-    }
-    if (gamePhase !== 'playing') {
-        toast({ title: "Cashout Error", description: "Can only cash out while the game is playing.", variant: "destructive" });
-        return;
-    }
-
-    const winnings = parseFloat((currentBet.amount * multiplier).toFixed(2));
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        walletBalance: increment(winnings)
-      });
-
-      const cashedOutBet: BetRecord = {
-        ...currentBet,
-        status: 'cashed_out',
-        cashOutMultiplier: multiplier,
-        winnings,
-      };
-      
-      setCurrentBet(null); 
-      setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + winnings } : null);
-      toast({ title: "Cashed Out!", description: `You won ${winnings.toFixed(2)} COINS at ${multiplier.toFixed(2)}x!` , variant: "default"});
-    } catch (error) {
-      console.error("Cashout error:", error);
-      toast({ title: "Cashout Failed", description: "Could not process your cashout.", variant: "destructive" });
-    }
-  };
-
-
+  // Loading and error states from useAuth
   if (loadingAuth) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -288,7 +90,7 @@ export default function SkytraxPage() {
    );
  }
   
-  if (!user || !userProfile) {
+  if (!user || !userProfile) { // Fallback if somehow auth is done but profile not set (should be handled by useAuth/GameProvider init)
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -307,35 +109,57 @@ export default function SkytraxPage() {
     );
   }
 
+  // If gameContext is not yet available (e.g., GameProvider is still initializing)
+  if (!gameContext) {
+     return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+         <Card className="p-8 shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-2xl font-headline text-center text-primary">Skytrax</CardTitle>
+            <CardDescription className="text-center">Loading game engine...</CardDescription>
+          </CardHeader>
+           <CardContent className="flex justify-center">
+            <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const { gameState, timeRemaining, placeBet, cashOut, currentLocalBet } = gameContext;
 
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-background p-4 md:p-8 space-y-6 md:space-y-8">
-      <header className="w-full max-w-4xl flex justify-between items-center">
+      <header className="w-full max-w-4xl flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-4xl font-headline font-bold text-primary">Skytrax</h1>
         <WalletDisplay 
           balance={userProfile?.walletBalance ?? 0} 
           onDepositClick={() => setIsDepositModalOpen(true)}
-          isLoading={loadingAuth} // Should be false here, but kept for safety
+          isLoading={loadingAuth} 
           userName={userProfile?.displayName}
         />
       </header>
 
-      <main className="w-full max-w-md flex flex-col items-center space-y-6">
-        <GameDisplay multiplier={multiplier} gamePhase={gamePhase} timeRemaining={gamePhase === 'betting' || gamePhase === 'idle' || gamePhase === 'starting' ? timeRemaining : undefined} />
+      <main className="w-full max-w-2xl flex flex-col items-center space-y-6"> {/* Increased max-width for canvas */}
+        <GameCanvas /> {/* GameCanvas reads from context */}
         <BetControls 
-          gamePhase={gamePhase}
-          onBet={handleBet}
-          onCashout={handleCashout}
-          currentBetAmount={currentBet?.amount ?? null}
-          currentMultiplier={multiplier}
+          gamePhase={gameState.status} // From context
+          onBet={placeBet} // From context
+          onCashout={cashOut} // From context
+          currentBetAmount={currentLocalBet?.amount ?? null} // From context
+          currentMultiplier={gameState.multiplier} // From context
           walletBalance={userProfile?.walletBalance ?? 0}
+          timeRemaining={timeRemaining} // From context, for betting phase display in BetControls
         />
       </main>
 
       <DepositModal 
         isOpen={isDepositModalOpen}
         onClose={() => setIsDepositModalOpen(false)}
-        onDeposit={handleDeposit}
+        onDeposit={handleDeposit} // Remains in SkytraxPage
       />
       
       <footer className="text-center text-muted-foreground text-sm mt-auto pt-8">
@@ -346,3 +170,35 @@ export default function SkytraxPage() {
   );
 }
 
+export default function SkytraxPage() {
+  const { user, userProfile, setUserProfile, loadingAuth, authError } = useAuth();
+  
+  // Render GameProvider only when auth is resolved and user/profile are available (or auth error occurs)
+  // This ensures GameProvider gets valid initial props.
+  if (loadingAuth && !authError) { // Show loading screen until auth is resolved
+     return (
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <Card className="p-8 shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-2xl font-headline text-center text-primary">Skytrax</CardTitle>
+            <CardDescription className="text-center">Authenticating...</CardDescription>
+          </CardHeader>
+           <CardContent className="flex justify-center">
+            <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  // If auth error, SkytraxPageContent will handle displaying it.
+  // If !user or !userProfile after loading and no error, SkytraxPageContent handles it.
+  // This ensures GameProvider always receives non-null user & userProfile if auth is successful.
+  return (
+    <GameProvider user={user} userProfile={userProfile} setUserProfile={setUserProfile}>
+      <SkytraxPageContent />
+    </GameProvider>
+  );
+}
