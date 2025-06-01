@@ -40,14 +40,18 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     if (audioRef.current) {
       audioRef.current.muted = isMuted;
       if (!isMuted && audioRef.current.paused) {
+        // Attempt to play when unmuted
         audioRef.current.play().catch(error => {
-          console.warn("Audio autoplay prevented:", error);
+          console.warn("Audio play attempt failed. Error:", error, "Ensure the audio file exists at public/audio/background-beat.mp3 and your browser allows audio playback.");
           toast({
-            title: "Audio Paused",
-            description: "Click the sound icon to play background music.",
+            title: "Audio Playback Issue",
+            description: "Could not play audio. Please check browser permissions or ensure the audio file is available. Try clicking the sound icon again.",
             variant: "default",
           });
         });
+      } else if (isMuted && !audioRef.current.paused) {
+        // Pause when muted if it was playing
+        audioRef.current.pause();
       }
     }
   }, [isMuted, toast]);
@@ -255,7 +259,3 @@ export default function SkytraxPage() {
     </GameProvider>
   );
 }
-
-    
-
-    
