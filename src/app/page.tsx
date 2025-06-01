@@ -51,7 +51,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     }
   };
 
-  if (loadingAuth && !userProfile && !authError) { // Show this only if no profile AND no error yet
+  if (loadingAuth && !userProfile && !authError) { 
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -94,7 +94,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
    );
  }
 
-  if (!user || !userProfile) { // Catch-all if user/profile still null after loading phase and no specific authError shown above
+  if (!user || !userProfile) { 
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -113,7 +113,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     );
   }
 
-  if (!gameContext) { // Should be available if user & userProfile are loaded
+  if (!gameContext) { 
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
          <Card className="p-8 shadow-xl">
@@ -132,7 +132,20 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     );
   }
 
-  const { gameState, timeRemaining, placeBet, cashOut, currentLocalBet } = gameContext;
+  const { 
+    gameState, 
+    timeRemaining, 
+    placeBet, 
+    cashOut, 
+    currentLocalBet,
+    isAutoBetEnabled,
+    toggleAutoBet,
+    isAutoCashoutEnabled,
+    toggleAutoCashout,
+    autoCashoutTarget,
+    setAutoCashoutTarget,
+    autoBetAmount
+  } = gameContext;
 
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-background p-4 md:p-8 space-y-6 md:space-y-8">
@@ -141,7 +154,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
         <WalletDisplay
           balance={userProfile?.walletBalance ?? 0}
           onDepositClick={() => setIsDepositModalOpen(true)}
-          isLoading={loadingAuth && !userProfile} // Loading if auth is running AND profile not yet loaded
+          isLoading={loadingAuth && !userProfile} 
           userName={userProfile?.displayName}
         />
       </header>
@@ -156,6 +169,13 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
           currentMultiplier={gameState.multiplier}
           walletBalance={userProfile?.walletBalance ?? 0}
           timeRemaining={timeRemaining}
+          isAutoBetEnabled={isAutoBetEnabled}
+          onAutoBetToggle={toggleAutoBet}
+          currentAutoBetAmount={autoBetAmount}
+          isAutoCashoutEnabled={isAutoCashoutEnabled}
+          onAutoCashoutToggle={toggleAutoCashout}
+          autoCashoutTarget={autoCashoutTarget}
+          onAutoCashoutTargetChange={setAutoCashoutTarget}
         />
          <div className="w-full space-y-4 mt-6">
           <RecentBets />
@@ -180,7 +200,6 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
 export default function SkytraxPage() {
   const { user, userProfile, setUserProfile, loadingAuth, authError } = useAuth();
 
-  // This initial loading state handles the period before useAuth has determined user/profile status.
   if (loadingAuth && !userProfile && !authError) { 
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -199,17 +218,17 @@ export default function SkytraxPage() {
       </div>
     );
   }
-  // GameProvider and SkytraxPageContent will handle further conditional rendering based on authError or if user/profile are still null.
-  // It's assumed that if loadingAuth is false, user and userProfile (or authError) should be definitively set.
+  
   return (
     <GameProvider user={user} userProfile={userProfile} setUserProfile={setUserProfile}>
       <SkytraxPageContent
         user={user}
         userProfile={userProfile}
-        loadingAuth={loadingAuth} // Pass down loadingAuth
+        loadingAuth={loadingAuth} 
         authError={authError}
         setUserProfile={setUserProfile}
       />
     </GameProvider>
   );
 }
+
