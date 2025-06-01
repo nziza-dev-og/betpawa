@@ -111,7 +111,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   const [lastCrashPoints, setLastCrashPoints] = useState<number[]>([]);
 
   const [isAutoBetEnabled, setIsAutoBetEnabled] = useState(false);
-  const [autoBetAmount, setAutoBetAmountState] = useState(10); // Default auto-bet amount
+  const [autoBetAmount, setAutoBetAmountState] = useState(10); 
   const [isAutoCashoutEnabled, setIsAutoCashoutEnabled] = useState(false);
   const [autoCashoutTarget, setAutoCashoutTargetState] = useState(2.0);
 
@@ -123,7 +123,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   const lostBetToastShownRef = useRef<string | null>(null);
   const betProcessedForHistory = useRef<string | null>(null);
   const autoCashoutProcessedThisRound = useRef<boolean>(false);
-
 
   const resetGameState = useCallback(() => {
     setMultiplier(1.00);
@@ -142,15 +141,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     lostBetToastShownRef.current = null;
     betProcessedForHistory.current = null;
   }, [resetGameState, currentLocalBet]);
-
-  useEffect(() => {
-    startNewRound();
-    return () => {
-      if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const toggleAutoBet = useCallback((enable: boolean, betAmountVal?: number) => {
     setIsAutoBetEnabled(enable);
@@ -174,13 +164,130 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   const setAutoCashoutTarget = useCallback((target: number) => {
     if (target >= 1.01) {
       setAutoCashoutTargetState(target);
-      if(isAutoCashoutEnabled) { // Only toast if it's already enabled
+      if(isAutoCashoutEnabled) { 
         toast({ title: "Auto Cashout Target Updated", description: `Now targeting ${target.toFixed(2)}x.` });
       }
     } else {
       toast({ title: "Invalid Target", description: "Auto cashout target must be at least 1.01x.", variant: "destructive" });
     }
   }, [toast, isAutoCashoutEnabled]);
+  
+  const placeBet = useCallback(async (amount: number) => {
+    if (!user || !userProfile) {
+      toast({ title: "Login Required", description: "Please log in to place a bet.", variant: "destructive" });
+      return Promise.reject("User not logged in");
+    }
+    if (userProfile.walletBalance < amount) {
+      toast({ title: "Insufficient Funds", description: "Not enough balance to place this bet.", variant: "destructive" });
+      if(isAutoBetEnabled) { 
+          setIsAutoBetEnabled(false);
+          toast({ title: "Auto Bet Disabled", description: "Insufficient funds.", variant: "destructive"});
+      }
+      return Promise.reject("Insufficient funds");
+    }
+    if (gamePhase !== 'betting') {
+      toast({ title: "Betting Closed", description: "You can only bet during the betting phase.", variant: "destructive" });
+      return Promise.reject("Betting closed");
+    }
+    if (currentLocalBet && currentLocalBet.status === 'placed') {
+      toast({ title: "Bet Already Placed", description: "You already have an active bet for this round.", variant: "destructive" });
+      return Promise.reject("Bet already placed");
+    }
+
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, {
+        walletBalance: increment(-amount)
+      });
+
+      const newBet: BetRecord = {
+        id: doc(collection(db, 'userBets')).id,
+        userId: user.uid,
+        amount,
+        status: 'placed',
+        createdAt: serverTimestamp(),
+        roundId: currentRoundId.current,
+      };
+
+      setCurrentLocalBet(newBet);
+      betProcessedForHistory.current = null; 
+      if (setUserProfile) {
+        setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance - amount } : null);
+      }
+      toast({ title: "Bet Placed!", description: `Your bet of ${amount} COINS is active.` });
+      return Promise.resolve();
+    } catch (error) {
+      console.error("Bet placement error:", error);
+      setCurrentLocalBet(null);
+      toast({ title: "Bet Failed", description: "Could not place your bet.", variant: "destructive" });
+      if(isAutoBetEnabled) { 
+          setIsAutoBetEnabled(false);
+          toast({ title: "Auto Bet Disabled", description: "Bet placement failed.", variant: "destructive"});
+      }
+      return Promise.reject(error);
+    }
+  }, [user, userProfile, gamePhase, currentLocalBet, toast, setUserProfile, isAutoBetEnabled, autoBetAmount]);
+
+  const cashOut = useCallback(async () => {
+    if (!user || !userProfile || !currentLocalBet || currentLocalBet.status !== 'placed') {
+      toast({ title: "Cashout Error", description: "No active bet to cash out.", variant: "destructive" });
+      return Promise.reject("No active bet");
+    }
+    if (gamePhase !== 'playing') {
+      toast({ title: "Cashout Error", description: "Can only cash out while the game is playing.", variant: "destructive" });
+      return Promise.reject("Not in playing phase");
+    }
+
+    const currentCashoutMultiplier = multiplier; 
+    const winnings = parseFloat((currentLocalBet.amount * currentCashoutMultiplier).toFixed(2));
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, {
+        walletBalance: increment(winnings)
+      });
+
+      const cashedOutBetData: BetRecord = {
+        ...currentLocalBet,
+        status: 'cashed_out',
+        cashOutMultiplier: currentCashoutMultiplier,
+        winnings,
+      };
+
+      setCurrentLocalBet(cashedOutBetData);
+
+      if (betProcessedForHistory.current !== cashedOutBetData.id && cashedOutBetData.id) {
+        const wonBetRecord: DisplayableBetRecord = {
+            id: cashedOutBetData.id,
+            amount: cashedOutBetData.amount,
+            timestamp: (cashedOutBetData.createdAt?.toDate?.() || new Date()).getTime(),
+            status: 'won',
+            profit: cashedOutBetData.winnings!,
+            cashoutAt: cashedOutBetData.cashOutMultiplier!,
+        };
+        setRecentBets(prev => [wonBetRecord, ...prev.slice(0, MAX_RECENT_BETS - 1)]);
+        betProcessedForHistory.current = wonBetRecord.id;
+      }
+      
+      if (setUserProfile) {
+        setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + winnings } : null);
+      }
+      toast({ title: "Cashed Out!", description: `You won ${winnings.toFixed(2)} COINS at ${currentCashoutMultiplier.toFixed(2)}x!`, variant: "default" });
+      return Promise.resolve();
+    } catch (error) {
+      console.error("Cashout error:", error);
+      toast({ title: "Cashout Failed", description: "Could not process your cashout.", variant: "destructive" });
+      return Promise.reject(error);
+    }
+  }, [user, userProfile, currentLocalBet, gamePhase, multiplier, toast, setUserProfile]);
+
+  useEffect(() => {
+    startNewRound();
+    return () => {
+      if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+    };
+  }, [startNewRound]);
+
 
   useEffect(() => {
     if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
@@ -197,9 +304,10 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
         setGamePhase('betting');
         setTimeRemaining(BETTING_DURATION);
       } else if (gamePhase === 'betting') {
-        // Auto Bet Logic
         if (isAutoBetEnabled && !currentLocalBet && user && userProfile && userProfile.walletBalance >= autoBetAmount) {
-          placeBet(autoBetAmount); // placeBet is async, error handling inside or via its promise
+          placeBet(autoBetAmount).catch(() => {
+            setIsAutoBetEnabled(false); 
+          });
         } else if (isAutoBetEnabled && userProfile && userProfile.walletBalance < autoBetAmount) {
           toast({ title: "Auto Bet Disabled", description: "Insufficient funds for auto bet.", variant: "destructive"});
           setIsAutoBetEnabled(false);
@@ -218,8 +326,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     return () => {
       if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gamePhase, timeRemaining, startNewRound, isAutoBetEnabled, autoBetAmount, user, userProfile, currentLocalBet]);
+  }, [gamePhase, timeRemaining, startNewRound, isAutoBetEnabled, autoBetAmount, user, userProfile, currentLocalBet, placeBet, toast]);
 
 
   useEffect(() => {
@@ -255,14 +362,13 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
         
         const currentEffectiveMultiplier = Math.min(smoothMultiplier, newCalculatedMultiplier, targetMultiplier);
 
-        // Auto Cashout Logic
         if (
           isAutoCashoutEnabled &&
           !autoCashoutProcessedThisRound.current &&
           currentLocalBet?.status === 'placed' &&
           currentEffectiveMultiplier >= autoCashoutTarget
         ) {
-          cashOut(); // cashOut is async
+          cashOut().catch(error => console.error("Auto cashout failed:", error)); 
           autoCashoutProcessedThisRound.current = true; 
         }
         return currentEffectiveMultiplier;
@@ -286,7 +392,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
         setCurrentLocalBet(prev => prev ? { ...prev, status: 'lost' } : null);
       }
     }
-  }, [multiplier, targetMultiplier, gamePhase, currentLocalBet, setGamePhase, setTimeRemaining, setCurrentLocalBet]);
+  }, [multiplier, targetMultiplier, gamePhase, currentLocalBet]);
 
 
   useEffect(() => {
@@ -332,115 +438,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     }
   }, [currentLocalBet]);
 
-  const placeBet = useCallback(async (amount: number) => {
-    if (!user || !userProfile) {
-      toast({ title: "Login Required", description: "Please log in to place a bet.", variant: "destructive" });
-      return Promise.reject("User not logged in");
-    }
-    if (userProfile.walletBalance < amount) {
-      toast({ title: "Insufficient Funds", description: "Not enough balance to place this bet.", variant: "destructive" });
-      if(isAutoBetEnabled) { // disable auto bet if funds are insufficient
-          setIsAutoBetEnabled(false);
-          toast({ title: "Auto Bet Disabled", description: "Insufficient funds.", variant: "destructive"});
-      }
-      return Promise.reject("Insufficient funds");
-    }
-    if (gamePhase !== 'betting') {
-      toast({ title: "Betting Closed", description: "You can only bet during the betting phase.", variant: "destructive" });
-      return Promise.reject("Betting closed");
-    }
-    if (currentLocalBet && currentLocalBet.status === 'placed') {
-      toast({ title: "Bet Already Placed", description: "You already have an active bet for this round.", variant: "destructive" });
-      return Promise.reject("Bet already placed");
-    }
-
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        walletBalance: increment(-amount)
-      });
-
-      const newBet: BetRecord = {
-        id: doc(collection(db, 'userBets')).id,
-        userId: user.uid,
-        amount,
-        status: 'placed',
-        createdAt: serverTimestamp(),
-        roundId: currentRoundId.current,
-      };
-
-      setCurrentLocalBet(newBet);
-      betProcessedForHistory.current = null; 
-      if (setUserProfile) {
-        setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance - amount } : null);
-      }
-      toast({ title: "Bet Placed!", description: `Your bet of ${amount} COINS is active.` });
-      return Promise.resolve();
-    } catch (error) {
-      console.error("Bet placement error:", error);
-      setCurrentLocalBet(null);
-      toast({ title: "Bet Failed", description: "Could not place your bet.", variant: "destructive" });
-      if(isAutoBetEnabled) { // disable auto bet if firebase update fails
-          setIsAutoBetEnabled(false);
-          toast({ title: "Auto Bet Disabled", description: "Bet placement failed.", variant: "destructive"});
-      }
-      return Promise.reject(error);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, userProfile, gamePhase, currentLocalBet, toast, setUserProfile, isAutoBetEnabled]);
-
-  const cashOut = useCallback(async () => {
-    if (!user || !userProfile || !currentLocalBet || currentLocalBet.status !== 'placed') {
-      toast({ title: "Cashout Error", description: "No active bet to cash out.", variant: "destructive" });
-      return Promise.reject("No active bet");
-    }
-    if (gamePhase !== 'playing') {
-      toast({ title: "Cashout Error", description: "Can only cash out while the game is playing.", variant: "destructive" });
-      return Promise.reject("Not in playing phase");
-    }
-
-    const currentCashoutMultiplier = multiplier; // Capture multiplier at the moment of cashout
-    const winnings = parseFloat((currentLocalBet.amount * currentCashoutMultiplier).toFixed(2));
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        walletBalance: increment(winnings)
-      });
-
-      const cashedOutBetData: BetRecord = {
-        ...currentLocalBet,
-        status: 'cashed_out',
-        cashOutMultiplier: currentCashoutMultiplier,
-        winnings,
-      };
-
-      setCurrentLocalBet(cashedOutBetData);
-
-      if (betProcessedForHistory.current !== cashedOutBetData.id && cashedOutBetData.id) {
-        const wonBetRecord: DisplayableBetRecord = {
-            id: cashedOutBetData.id,
-            amount: cashedOutBetData.amount,
-            timestamp: (cashedOutBetData.createdAt?.toDate?.() || new Date()).getTime(),
-            status: 'won',
-            profit: cashedOutBetData.winnings!,
-            cashoutAt: cashedOutBetData.cashOutMultiplier!,
-        };
-        setRecentBets(prev => [wonBetRecord, ...prev.slice(0, MAX_RECENT_BETS - 1)]);
-        betProcessedForHistory.current = wonBetRecord.id;
-      }
-      
-      if (setUserProfile) {
-        setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + winnings } : null);
-      }
-      toast({ title: "Cashed Out!", description: `You won ${winnings.toFixed(2)} COINS at ${currentCashoutMultiplier.toFixed(2)}x!`, variant: "default" });
-      return Promise.resolve();
-    } catch (error) {
-      console.error("Cashout error:", error);
-      toast({ title: "Cashout Failed", description: "Could not process your cashout.", variant: "destructive" });
-      return Promise.reject(error);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, userProfile, currentLocalBet, gamePhase, multiplier, toast, setUserProfile]);
 
   const gameStateForContext: GameStateContext = {
     multiplier: gamePhase === 'crashed' && targetMultiplier > 0 ? targetMultiplier : multiplier,
@@ -459,7 +456,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       recentBets,
       isAutoBetEnabled,
       toggleAutoBet,
-      autoBetAmount, // Use autoBetAmount from state
+      autoBetAmount, 
       isAutoCashoutEnabled,
       toggleAutoCashout,
       autoCashoutTarget,
