@@ -5,7 +5,7 @@ import type { UserProfile } from '@/hooks/use-auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
-import { db, doc, updateDoc, increment, serverTimestamp, collection } from '@/lib/firebase';
+import { db, doc, updateDoc, increment, serverTimestamp, collection, addDoc, query, orderBy, limit, getDocs } from '@/lib/firebase';
 
 const CRASH_POINTS = [
   1.00, 1.02, 1.05, 1.08, 1.10, 1.13, 1.16, 1.19, 1.22, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50,
@@ -73,13 +73,6 @@ interface GameContextValue {
   cashOut: () => Promise<void>;
   currentLocalBet: BetRecord | null;
   recentBets: DisplayableBetRecord[];
-  isAutoBetEnabled: boolean;
-  toggleAutoBet: (enable: boolean, betAmount?: number) => void;
-  isAutoCashoutEnabled: boolean;
-  toggleAutoCashout: (enable: boolean) => void;
-  autoCashoutTarget: number;
-  setAutoCashoutTarget: (target: number) => void;
-  autoBetAmount: number;
 }
 
 const GameContext = createContext<GameContextValue | undefined>(undefined);
@@ -110,11 +103,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   const [recentBets, setRecentBets] = useState<DisplayableBetRecord[]>([]);
   const [lastCrashPoints, setLastCrashPoints] = useState<number[]>([]);
 
-  const [isAutoBetEnabled, setIsAutoBetEnabled] = useState(false);
-  const [autoBetAmount, setAutoBetAmountState] = useState(10); 
-  const [isAutoCashoutEnabled, setIsAutoCashoutEnabled] = useState(false);
-  const [autoCashoutTarget, setAutoCashoutTargetState] = useState(2.0);
-
 
   const gameLoopTimer = useRef<NodeJS.Timeout | null>(null);
   const animationFrameId = useRef<number | null>(null);
@@ -122,12 +110,10 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   const currentRoundId = useRef<string>('');
   const lostBetToastShownRef = useRef<string | null>(null);
   const betProcessedForHistory = useRef<string | null>(null);
-  const autoCashoutProcessedThisRound = useRef<boolean>(false);
 
   const resetGameState = useCallback(() => {
     setMultiplier(1.00);
     setTargetMultiplier(0);
-    autoCashoutProcessedThisRound.current = false;
   }, []);
 
   const startNewRound = useCallback(() => {
@@ -142,35 +128,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     betProcessedForHistory.current = null;
   }, [resetGameState, currentLocalBet]);
 
-  const toggleAutoBet = useCallback((enable: boolean, betAmountVal?: number) => {
-    setIsAutoBetEnabled(enable);
-    if (enable && betAmountVal && betAmountVal > 0) {
-      setAutoBetAmountState(betAmountVal);
-      toast({ title: "Auto Bet Enabled", description: `Will bet ${betAmountVal.toFixed(2)} COINS next round.` });
-    } else if (!enable) {
-      toast({ title: "Auto Bet Disabled" });
-    }
-  }, [toast]);
-
-  const toggleAutoCashout = useCallback((enable: boolean) => {
-    setIsAutoCashoutEnabled(enable);
-     if (enable) {
-      toast({ title: "Auto Cashout Enabled", description: `Will cashout at ${autoCashoutTarget.toFixed(2)}x.` });
-    } else {
-      toast({ title: "Auto Cashout Disabled" });
-    }
-  }, [toast, autoCashoutTarget]);
-
-  const setAutoCashoutTarget = useCallback((target: number) => {
-    if (target >= 1.01) {
-      setAutoCashoutTargetState(target);
-      if(isAutoCashoutEnabled) { 
-        toast({ title: "Auto Cashout Target Updated", description: `Now targeting ${target.toFixed(2)}x.` });
-      }
-    } else {
-      toast({ title: "Invalid Target", description: "Auto cashout target must be at least 1.01x.", variant: "destructive" });
-    }
-  }, [toast, isAutoCashoutEnabled]);
   
   const placeBet = useCallback(async (amount: number) => {
     if (!user || !userProfile) {
@@ -179,10 +136,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     }
     if (userProfile.walletBalance < amount) {
       toast({ title: "Insufficient Funds", description: "Not enough balance to place this bet.", variant: "destructive" });
-      if(isAutoBetEnabled) { 
-          setIsAutoBetEnabled(false);
-          toast({ title: "Auto Bet Disabled", description: "Insufficient funds.", variant: "destructive"});
-      }
       return Promise.reject("Insufficient funds");
     }
     if (gamePhase !== 'betting') {
@@ -220,13 +173,9 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       console.error("Bet placement error:", error);
       setCurrentLocalBet(null);
       toast({ title: "Bet Failed", description: "Could not place your bet.", variant: "destructive" });
-      if(isAutoBetEnabled) { 
-          setIsAutoBetEnabled(false);
-          toast({ title: "Auto Bet Disabled", description: "Bet placement failed.", variant: "destructive"});
-      }
       return Promise.reject(error);
     }
-  }, [user, userProfile, gamePhase, currentLocalBet, toast, setUserProfile, isAutoBetEnabled, autoBetAmount]);
+  }, [user, userProfile, gamePhase, currentLocalBet, toast, setUserProfile]);
 
   const cashOut = useCallback(async () => {
     if (!user || !userProfile || !currentLocalBet || currentLocalBet.status !== 'placed') {
@@ -281,12 +230,30 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   }, [user, userProfile, currentLocalBet, gamePhase, multiplier, toast, setUserProfile]);
 
   useEffect(() => {
-    startNewRound();
+    const fetchHistory = async () => {
+      try {
+        const historyQuery = query(
+          collection(db, 'gameRounds'),
+          orderBy('createdAt', 'desc'),
+          limit(MAX_CRASH_POINTS_HISTORY)
+        );
+        const querySnapshot = await getDocs(historyQuery);
+        const fetchedPoints = querySnapshot.docs.map(d => d.data().crashPoint as number);
+        setLastCrashPoints(fetchedPoints.reverse()); // To show oldest first if needed, or keep as is for newest first
+      } catch (err) {
+        console.error("Error fetching crash history:", err);
+        // Optionally set some default or empty history
+      }
+    };
+    fetchHistory();
+    startNewRound(); // Initialize the first round
+
     return () => {
       if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
-  }, [startNewRound]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Fetch history only once on mount
 
 
   useEffect(() => {
@@ -304,21 +271,11 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
         setGamePhase('betting');
         setTimeRemaining(BETTING_DURATION);
       } else if (gamePhase === 'betting') {
-        if (isAutoBetEnabled && !currentLocalBet && user && userProfile && userProfile.walletBalance >= autoBetAmount) {
-          placeBet(autoBetAmount).catch(() => {
-            setIsAutoBetEnabled(false); 
-          });
-        } else if (isAutoBetEnabled && userProfile && userProfile.walletBalance < autoBetAmount) {
-          toast({ title: "Auto Bet Disabled", description: "Insufficient funds for auto bet.", variant: "destructive"});
-          setIsAutoBetEnabled(false);
-        }
-        
         setGamePhase('playing');
         const randomCrashPoint = CRASH_POINTS[Math.floor(Math.random() * CRASH_POINTS.length)];
         setTargetMultiplier(randomCrashPoint);
         setMultiplier(1.00);
         gameStartTime.current = Date.now();
-        autoCashoutProcessedThisRound.current = false;
       } else if (gamePhase === 'crashed') {
         startNewRound();
       }
@@ -326,7 +283,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     return () => {
       if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
     };
-  }, [gamePhase, timeRemaining, startNewRound, isAutoBetEnabled, autoBetAmount, user, userProfile, currentLocalBet, placeBet, toast]);
+  }, [gamePhase, timeRemaining, startNewRound, placeBet, toast]);
 
 
   useEffect(() => {
@@ -362,15 +319,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
         
         const currentEffectiveMultiplier = Math.min(smoothMultiplier, newCalculatedMultiplier, targetMultiplier);
 
-        if (
-          isAutoCashoutEnabled &&
-          !autoCashoutProcessedThisRound.current &&
-          currentLocalBet?.status === 'placed' &&
-          currentEffectiveMultiplier >= autoCashoutTarget
-        ) {
-          cashOut().catch(error => console.error("Auto cashout failed:", error)); 
-          autoCashoutProcessedThisRound.current = true; 
-        }
         return currentEffectiveMultiplier;
       });
       animationFrameId.current = requestAnimationFrame(animateMultiplierLoop);
@@ -380,7 +328,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
     return () => {
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
-  }, [gamePhase, targetMultiplier, isAutoCashoutEnabled, autoCashoutTarget, currentLocalBet, cashOut]);
+  }, [gamePhase, targetMultiplier, currentLocalBet, cashOut]);
 
 
   useEffect(() => {
@@ -388,6 +336,13 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       setGamePhase('crashed');
       setTimeRemaining(CRASHED_DURATION);
       setLastCrashPoints(prev => [targetMultiplier, ...prev.slice(0, MAX_CRASH_POINTS_HISTORY - 1)]);
+      
+      // Save to Firestore
+      addDoc(collection(db, 'gameRounds'), {
+        crashPoint: targetMultiplier,
+        createdAt: serverTimestamp(),
+      }).catch(err => console.error("Error saving crash point to Firestore:", err));
+
       if (currentLocalBet && currentLocalBet.status === 'placed') {
         setCurrentLocalBet(prev => prev ? { ...prev, status: 'lost' } : null);
       }
@@ -454,13 +409,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       cashOut,
       currentLocalBet,
       recentBets,
-      isAutoBetEnabled,
-      toggleAutoBet,
-      autoBetAmount, 
-      isAutoCashoutEnabled,
-      toggleAutoCashout,
-      autoCashoutTarget,
-      setAutoCashoutTarget
     }}>
       {children}
     </GameContext.Provider>

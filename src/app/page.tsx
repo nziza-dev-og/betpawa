@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import GameCanvas from '@/components/game/GameCanvas';
+import { useState, useEffect, Suspense } from 'react';
+import dynamic from 'next/dynamic';
 import { BetControls } from '@/components/game/BetControls';
 import { WalletDisplay } from '@/components/wallet/WalletDisplay';
 import { DepositModal } from '@/components/wallet/DepositModal';
@@ -11,10 +11,20 @@ import { useToast } from "@/hooks/use-toast";
 import { db, doc, updateDoc, increment } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { GameProvider, useGame } from '@/contexts/GameContext';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { RecentBets } from '@/components/history/RecentBets';
 import { GameHistory } from '@/components/history/GameHistory';
+
+const GameCanvas = dynamic(() => import('@/components/game/GameCanvas'), { 
+  ssr: false,
+  loading: () => (
+    <Skeleton className="w-full aspect-video rounded-lg bg-gray-800 flex items-center justify-center">
+      <p className="text-muted-foreground">Loading 3D Plane...</p>
+    </Skeleton>
+  )
+});
 
 interface SkytraxPageContentProps {
   user: FirebaseUser | null;
@@ -137,14 +147,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     timeRemaining, 
     placeBet, 
     cashOut, 
-    currentLocalBet,
-    isAutoBetEnabled,
-    toggleAutoBet,
-    isAutoCashoutEnabled,
-    toggleAutoCashout,
-    autoCashoutTarget,
-    setAutoCashoutTarget,
-    autoBetAmount
+    currentLocalBet
   } = gameContext;
 
   return (
@@ -160,7 +163,9 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
       </header>
 
       <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
-        <GameCanvas />
+        <Suspense fallback={<Skeleton className="w-full aspect-video rounded-lg bg-muted" />}>
+          <GameCanvas />
+        </Suspense>
         <BetControls
           gamePhase={gameState.status}
           onBet={placeBet}
@@ -169,13 +174,6 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
           currentMultiplier={gameState.multiplier}
           walletBalance={userProfile?.walletBalance ?? 0}
           timeRemaining={timeRemaining}
-          isAutoBetEnabled={isAutoBetEnabled}
-          onAutoBetToggle={toggleAutoBet}
-          currentAutoBetAmount={autoBetAmount}
-          isAutoCashoutEnabled={isAutoCashoutEnabled}
-          onAutoCashoutToggle={toggleAutoCashout}
-          autoCashoutTarget={autoCashoutTarget}
-          onAutoCashoutTargetChange={setAutoCashoutTarget}
         />
          <div className="w-full space-y-4 mt-6">
           <RecentBets />
