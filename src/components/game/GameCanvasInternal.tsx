@@ -1,203 +1,23 @@
-
 "use client";
-import { useRef, Suspense, useState, useEffect } from 'react';
-import { Canvas, useFrame, type ThreeElements } from '@react-three/fiber';
-import { Text, Stars, Sparkles } from '@react-three/drei';
-import * as THREE from 'three';
-// import { useGame, type ActiveBetContext, type GamePhase } from '../../contexts/GameContext'; // Temporarily comment out
-// import { ActiveBet } from './ActiveBet'; // Temporarily comment out
 
-// Define a type for the props of FlyingObject
-interface FlyingObjectProps {
-  multiplier: number;
-  gamePhase: string; // Simplified for now
-}
+import dynamic from "next/dynamic";
+import { Skeleton } from "@/components/ui/skeleton";
 
-function FlyingObject({ multiplier, gamePhase }: FlyingObjectProps) {
-  const groupRef = useRef<THREE.Group>(null!);
-  const trailRef = useRef<THREE.Group>(null!);
-  const lastPosition = useRef(new THREE.Vector3());
-  let _axis = new THREE.Vector3(0, 1, 0); // Re-usable axis for quaternion
-
-  useFrame((state, delta) => {
-    if (!groupRef.current) return;
-
-    const t = state.clock.getElapsedTime();
-    let targetX, targetY, targetZ;
-
-    const visualMultiplier = Math.min(multiplier, 1000); // Cap visual progression
-
-    // X: Logarithmic scale for time/progress, then linear
-    if (visualMultiplier <= 1) {
-      targetX = 0;
-    } else if (visualMultiplier <= 10) {
-      targetX = (visualMultiplier - 1) * 2; // More initial movement
-    } else {
-      targetX = 18 + Math.log10(visualMultiplier / 10) * 30; // Slower progression for higher multipliers
-    }
-
-    // Y: Logarithmic scale for multiplier value, emphasizing initial climb
-    if (visualMultiplier <= 1) {
-      targetY = 0;
-    } else if (visualMultiplier <= 5) {
-        targetY = Math.log2(visualMultiplier) * 2.5;
-    } else {
-        targetY = Math.log2(5) * 2.5 + Math.log10(visualMultiplier / 5) * 5;
-    }
-    
-    targetZ = 0; // Keep Z fixed for now, or add slight depth if needed
-
-    const newPosition = new THREE.Vector3(targetX, targetY, targetZ);
-
-    // Smoothly interpolate position
-    groupRef.current.position.lerp(newPosition, 0.1);
-
-    // Orientation: Make the plane look towards its direction of movement
-    if (lastPosition.current && !groupRef.current.position.equals(lastPosition.current) && multiplier > 1.01) {
-      const direction = new THREE.Vector3().subVectors(groupRef.current.position, lastPosition.current).normalize();
-      if (direction.lengthSq() > 0.0001) { // Ensure direction is not zero vector
-        const targetQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), direction);
-         // Add a slight banking effect based on turn sharpness (simplified)
-        const bankingStrength = Math.min(Math.abs(direction.y) * 0.5, 0.4); // Bank up to ~22 degrees
-        const bankQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -direction.y * bankingStrength);
-        targetQuaternion.multiply(bankQuaternion);
-        groupRef.current.quaternion.slerp(targetQuaternion, 0.15);
-      }
-    } else if (multiplier <= 1.01) {
-       // Reset to default orientation if not moving
-      groupRef.current.quaternion.slerp(new THREE.Quaternion(), 0.1);
-    }
-    lastPosition.current.copy(groupRef.current.position);
-
-    // Crash animation (simple shake or fall)
-    if (gamePhase === 'crashed') {
-      groupRef.current.rotation.z += Math.sin(t * 50) * 0.05;
-      groupRef.current.position.y -= delta * 5; // Fall down
-    }
-  });
-
-  const planeBodyColor = "#778899"; // Darker, metallic slate gray
-  const planeWingColor = "#A9A9A9"; // Lighter gray for wings
-  const engineGlowColor = "#FFA500"; // Orange glow
-
-  return (
-    <group ref={groupRef}>
-      {/* Plane Body (Cone) */}
-      <mesh castShadow receiveShadow>
-        <coneGeometry args={[0.3, 1.2, 8]} /> {/* radius, height, radialSegments */}
-        <meshStandardMaterial color={planeBodyColor} metalness={0.7} roughness={0.3} />
-      </mesh>
-      {/* Wings (Boxes) - Main Wings */}
-      <mesh position={[0, -0.1, 0.7]} castShadow receiveShadow> {/* Adjusted y and z for better wing placement */}
-        <boxGeometry args={[0.2, 2, 0.15]} /> {/* width, height (span), depth */}
-        <meshStandardMaterial color={planeWingColor} metalness={0.6} roughness={0.4} />
-      </mesh>
-       {/* Tail Wings (Horizontal Stabilizers) */}
-      <mesh position={[-0.45, -0.1, 0.3]} castShadow receiveShadow>
-        <boxGeometry args={[0.15, 0.8, 0.1]} />
-        <meshStandardMaterial color={planeWingColor} metalness={0.6} roughness={0.4} />
-      </mesh>
-       {/* Tail Fin (Vertical Stabilizer) */}
-      <mesh position={[-0.5, 0.15, 0]} rotation={[0,0, -Math.PI / 18]} castShadow receiveShadow> {/* Slight angle for fin */}
-        <boxGeometry args={[0.1, 0.4, 0.3]} /> {/* width, height, depth */}
-        <meshStandardMaterial color={planeWingColor} metalness={0.6} roughness={0.4}/>
-      </mesh>
-
-      {/* Engine Glow - only visible when playing and multiplier > 1 */}
-      {gamePhase === 'playing' && multiplier > 1.01 && (
-        <mesh position={[-0.6, 0, 0]}> {/* Positioned at the back of the cone */}
-          <sphereGeometry args={[0.12, 16, 8]} />
-          <meshStandardMaterial emissive={engineGlowColor} emissiveIntensity={2} color={engineGlowColor} toneMapped={false}/>
-        </mesh>
-      )}
-      
-      {/* Multiplier Text */}
-      {(gamePhase === 'playing' || gamePhase === 'crashed') && multiplier > 0 && (
-        <Text
-          position={[1, 0.5, 0]} // Position relative to the plane
-          fontSize={0.25}
-          color={gamePhase === 'crashed' ? "#FF6347" : "#FFFFFF"} // Tomato for crashed, white otherwise
-          anchorX="left"
-          anchorY="middle"
-          outlineWidth={0.01}
-          outlineColor="#000000"
-        >
-          {multiplier.toFixed(2)}x
-        </Text>
-      )}
-      {gamePhase === 'playing' && multiplier > 1.05 && (
-          <Sparkles
-            ref={trailRef}
-            count={30}
-            scale={[1,1,1]}
-            size={1 + Math.random()*2}
-            speed={0.3}
-            noise={0.1}
-            color={engineGlowColor}
-            position={[-0.8,0,0]} // Behind the plane
-          />
-      )}
-    </group>
-  );
-}
-
-
-const GameCanvasComponentInternal = () => {
-  // const { gameState, activeBets, timeRemaining } = useGame(); // Temporarily commented out
-  // const canvasGameStatus = gameState.status; // Temporarily comment out
-  const [isClientMounted, setIsClientMounted] = useState(false);
-
-  useEffect(() => {
-    setIsClientMounted(true);
-  }, []);
-
-  if (!isClientMounted) {
-    // Render a placeholder or null on the server/before hydration
-    // The parent dynamic import already has a Skeleton.
-    return null; 
+// Dynamically import the PlayCanvas embed component with ssr: false
+const PlayCanvasEmbedWithNoSSR = dynamic(
+  () => import('@/components/game/PlayCanvasEmbed'),
+  {
+    ssr: false,
+    loading: () => (
+      <Skeleton className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
+        <p className="text-muted-foreground">Loading 3D Experience...</p>
+      </Skeleton>
+    )
   }
+);
 
-  // Simplified props for FlyingObject for this debugging step
-  const mockMultiplier = 2.50; 
-  const mockGamePhase = "playing"; // Options: "playing", "crashed", "idle" (or other valid GamePhase strings if needed for FlyingObject)
-
-
-  return (
-    <div className="w-full aspect-video relative overflow-hidden rounded-lg shadow-xl bg-gray-900">
-      <Canvas 
-        shadows 
-        camera={{ position: [2, 2, 8], fov: 50 }} // Adjusted camera
-        dpr={[1, 2]} // Optimize for device pixel ratio
-      >
-        <Suspense fallback={null}>
-          <ambientLight intensity={0.2} />
-          <hemisphereLight skyColor={"#87CEEB"} groundColor={"#4A4A4A"} intensity={0.6} />
-          <directionalLight 
-            position={[5, 8, 5]} 
-            intensity={1.5} 
-            castShadow 
-            shadow-mapSize-width={1024}
-            shadow-mapSize-height={1024}
-            shadow-camera-far={50}
-            shadow-camera-left={-10}
-            shadow-camera-right={10}
-            shadow-camera-top={10}
-            shadow-camera-bottom={-10}
-          />
-          <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-          
-          <FlyingObject multiplier={mockMultiplier} gamePhase={mockGamePhase} />
-        </Suspense>
-      </Canvas>
-      
-      {/* All overlay UI that depended on GameContext is temporarily removed for debugging */}
-      {/* For example:
-      {canvasGameStatus === 'playing' && activeBets.length > 0 && ( ... )}
-      {(canvasGameStatus === 'idle' || canvasGameStatus === 'starting' || canvasGameStatus === 'betting') && ( ... )}
-      {canvasGameStatus === 'crashed' && ( ... )}
-      */}
-    </div>
-  );
+const GameCanvas = () => {
+  return <PlayCanvasEmbedWithNoSSR />;
 };
 
-export default GameCanvasComponentInternal;
+export default GameCanvas;

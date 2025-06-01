@@ -4,10 +4,10 @@
 import dynamic from "next/dynamic";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Dynamically import the R3F heavy component with ssr: false
-const GameCanvasComponentInternalWithNoSSR = dynamic(
-  () => import('@/components/game/GameCanvasInternal'), 
-  { 
+// Dynamically import the PlayCanvas embed component with ssr: false
+const PlayCanvasEmbedWithNoSSR = dynamic(
+  () => import('@/components/game/PlayCanvasEmbed'),
+  {
     ssr: false,
     loading: () => (
       <Skeleton className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
@@ -17,11 +17,8 @@ const GameCanvasComponentInternalWithNoSSR = dynamic(
   }
 );
 
-// This component acts as the wrapper that is statically imported by page.tsx
 const GameCanvas = () => {
-  return <GameCanvasComponentInternalWithNoSSR />;
+  return <PlayCanvasEmbedWithNoSSR />;
 };
 
 export default GameCanvas;
-
-    
