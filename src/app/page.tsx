@@ -170,6 +170,8 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
       </header>
 
       <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
+        {/* The Suspense wrapper here might be for assets inside GameCanvas, which is fine.
+            The loading of GameCanvas itself is handled by next/dynamic's loading prop. */}
         <Suspense fallback={<Skeleton className="w-full aspect-video rounded-lg bg-muted" />}>
           <GameCanvas />
         </Suspense>
