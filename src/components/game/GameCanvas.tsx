@@ -1,98 +1,93 @@
 
 "use client";
 import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
-import { useGame, type GameStateContext as GameContextStateType, type ActiveBetContext } from '@/contexts/GameContext';
+import { useGame, type GameStateContext as GameContextStateType, type ActiveBetContext } from '@/contexts/GameContext'; // Corrected import path
 import { ActiveBet } from './ActiveBet';
 
 const GameCanvas = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
+  const pathPointsRef = useRef<{x: number, y: number}[]>([]);
   const { gameState, activeBets, timeRemaining } = useGame();
   
+  const [smoothMultiplier, setSmoothMultiplier] = useState(1);
+
   const canvasGameStatus = useMemo(() => {
     switch (gameState.status) {
-      case 'idle':
-      case 'starting':
-        return 'waiting';
-      case 'betting':
-        return 'betting';
-      case 'playing':
-        return 'flying';
-      case 'crashed':
-        return 'crashed';
-      default:
-        return 'waiting';
+      case 'idle': case 'starting': return 'waiting';
+      case 'betting': return 'betting';
+      case 'playing': return 'flying';
+      case 'crashed': return 'crashed';
+      default: return 'waiting';
     }
   }, [gameState.status]);
 
-  const [smoothMultiplier, setSmoothMultiplier] = useState(1.00);
-  
   useEffect(() => {
     if (gameState.status === 'playing') {
-      // For playing state, we want a smooth interpolation
-      // This effect will handle the RAF loop for smoothing
-      let currentAnimationId: number;
+      const target = gameState.multiplier;
       const animate = () => {
-        setSmoothMultiplier(prevSmooth => {
-          const target = gameState.multiplier;
-          if (Math.abs(target - prevSmooth) < 0.01) {
-            cancelAnimationFrame(currentAnimationId);
-            return target; // Snap to target if very close
+        setSmoothMultiplier(prev => {
+          const diff = target - prev;
+          const newValue = prev + diff * 0.15; 
+          if (Math.abs(diff) < 0.01 || prev >= target) { // Ensure it doesn't overshoot and stops
+             cancelAnimationFrame(animationRef.current!);
+             return target;
           }
-          // Interpolate (adjust 0.1 for speed, smaller means slower)
-          return prevSmooth + (target - prevSmooth) * 0.05; 
+          return newValue;
         });
-        currentAnimationId = requestAnimationFrame(animate);
+        animationRef.current = requestAnimationFrame(animate);
       };
-      currentAnimationId = requestAnimationFrame(animate);
-      return () => cancelAnimationFrame(currentAnimationId);
+      animationRef.current = requestAnimationFrame(animate);
+      return () => {
+        if (animationRef.current) {
+            cancelAnimationFrame(animationRef.current);
+        }
+      };
     } else {
-      // For other states, snap directly to the game state multiplier
       setSmoothMultiplier(gameState.multiplier);
-      if (animationRef.current) { // Ensure any previous flying animation is cancelled
+      if (animationRef.current) { // Ensure any playing animation is cancelled
         cancelAnimationFrame(animationRef.current);
+      }
+      if (gameState.status !== 'playing') { // Reset path on non-playing states
+        pathPointsRef.current = [];
       }
     }
   }, [gameState.multiplier, gameState.status]);
 
 
-  // Helper function for Y position calculation (used by multiple drawing functions)
-  const calculateYPositionOnGraph = useCallback((multiplierValue: number, logicalCanvasHeight: number, graphStartY: number) => {
-    const visualMultiplier = Math.min(multiplierValue, 1000); // Cap at 1000x for visual scaling
-    const graphHeight = graphStartY - 50; // Deduct top margin
+  const calculateYPosition = useCallback((multiplierValue: number, logicalCanvasHeight: number, graphStartY: number) => {
+    const visualMultiplier = Math.min(multiplierValue, 1000); 
+    const graphHeight = graphStartY - 50; 
     let progressY = 0;
     if (visualMultiplier > 1) {
-      progressY = Math.log10(visualMultiplier) / Math.log10(1000); // Logarithmic scale up to 1000x
+      progressY = Math.log10(visualMultiplier) / Math.log10(1000); 
     }
     return graphStartY - progressY * graphHeight;
   }, []);
 
-  // New calculateNewPosition based on user's provided logic
   const calculateNewPosition = useCallback((currentMultiplier: number, canvas: HTMLCanvasElement) => {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
     const logicalWidth = canvas.width / dpr;
     const logicalHeight = canvas.height / dpr;
     const startX = 50;
-    const startY = logicalHeight - 50; // This is graph's baseline Y
+    const startY = logicalHeight - 50; 
     const maxX = logicalWidth - 50;
     
     const visualMultiplier = Math.min(currentMultiplier, 1000);
     
     let progressX;
     if (visualMultiplier <= 10) {
-      progressX = (visualMultiplier - 1) / (10 - 1) * 0.5; // (multiplier-1)/(10-1) normalizes 1-10 to 0-1
+      progressX = (visualMultiplier - 1) / (10 - 1) * 0.5; 
     } else {
-      // For multipliers > 10, use log scale for the remaining half
       progressX = 0.5 + (Math.log10(visualMultiplier / 10) / Math.log10(1000 / 10)) * 0.5;
     }
-    progressX = Math.min(1, Math.max(0, progressX)); // Clamp progressX between 0 and 1
+    progressX = Math.min(1, Math.max(0, progressX)); 
     
     const x = startX + progressX * (maxX - startX);
-    const y = calculateYPositionOnGraph(visualMultiplier, logicalHeight, startY);
+    const y = calculateYPosition(visualMultiplier, logicalHeight, startY);
     
     return { x: Math.max(startX, x), y: Math.min(startY, Math.max(50, y)) };
-  }, [calculateYPositionOnGraph]);
-
+  }, [calculateYPosition]);
 
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D, logicalWidth: number, logicalHeight: number) => {
     ctx.strokeStyle = 'rgba(128, 128, 128, 0.15)';
@@ -131,7 +126,7 @@ const GameCanvas = () => {
     
     const multipliers = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
     multipliers.forEach(mult => {
-      const yPos = calculateYPositionOnGraph(mult, logicalHeight, startY);
+      const yPos = calculateYPosition(mult, logicalHeight, startY);
       if (yPos >= 20) {
         ctx.fillText(`${mult}x`, startX - 5, yPos + (3 / dpr));
         ctx.beginPath();
@@ -150,171 +145,287 @@ const GameCanvas = () => {
             ctx.fillText(`${sec}s`, xPos, startY + (15/dpr));
         }
     });
-  }, [calculateYPositionOnGraph]);
+  }, [calculateYPosition]);
 
-  const drawPlanePath = useCallback((ctx: CanvasRenderingContext2D, startX: number, startY: number, currentMultiplierValue: number, gameStatus: 'waiting' | 'flying' | 'crashed' | 'betting', canvas: HTMLCanvasElement) => {
-    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  const drawCurvedPath = useCallback((
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    points: {x: number, y: number}[],
+    status: string
+  ) => {
+    if (points.length === 0 && status !== 'flying' && status !== 'crashed') { // Don't draw if no points and not in a relevant state
+        ctx.beginPath();
+        ctx.moveTo(startX, startY); // Keep a starting dot
+        ctx.lineTo(startX + 0.1, startY); // Tiny line to make it "visible" if needed or just a point
+        ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        return;
+    }
+    if (points.length < 1 && (status === 'flying' || status === 'crashed') ) return; // Needs at least one point for flying/crashed drawing
+    
     ctx.beginPath();
-    ctx.strokeStyle = gameStatus === 'crashed' ? 'rgba(255, 0, 0, 0.8)' : 'rgba(255, 200, 0, 0.9)';
-    ctx.lineWidth = 2 / dpr ;
     ctx.moveTo(startX, startY);
     
-    const { x, y } = calculateNewPosition(currentMultiplierValue, canvas);
-    ctx.lineTo(x, y);
+    if (points.length === 1) {
+      ctx.lineTo(points[0].x, points[0].y);
+    } else if (points.length > 1) {
+      for (let i = 0; i < points.length - 1; i++) {
+        const p0 = (i === 0) ? {x: startX, y: startY} : points[i-1];
+        const p1 = points[i];
+        const p2 = points[i+1];
+        const p3 = (i === points.length - 2) ? p2 : points[i+2];
+
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+        
+        if (i === 0) ctx.quadraticCurveTo(p1.x, p1.y, (p1.x + p2.x)/2, (p1.y + p2.y)/2); // Start with quad for smoothness
+        else ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+      }
+       // Ensure path reaches the last point if not fully covered by loop
+      if(points.length > 0) ctx.lineTo(points[points.length-1].x, points[points.length-1].y);
+    }
+    
+    ctx.strokeStyle = status === 'crashed' ? 'rgba(255, 0, 0, 0.8)' : 'rgba(255, 200, 0, 0.9)';
+    ctx.lineWidth = 2;
     ctx.stroke();
     
-    if (gameStatus === 'flying') {
+    if (status === 'flying' && points.length > 0) {
       ctx.beginPath();
-      ctx.strokeStyle = 'rgba(255, 200, 0, 0.2)';
-      ctx.lineWidth = 6 / dpr;
       ctx.moveTo(startX, startY);
-      ctx.lineTo(x, y);
+      if (points.length === 1) {
+        ctx.lineTo(points[0].x, points[0].y);
+      } else {
+        for (let i = 0; i < points.length - 1; i++) {
+         const p0 = (i === 0) ? {x: startX, y: startY} : points[i-1];
+         const p1 = points[i];
+         const p2 = points[i+1];
+         const p3 = (i === points.length - 2) ? p2 : points[i+2];
+
+         const cp1x = p1.x + (p2.x - p0.x) / 6;
+         const cp1y = p1.y + (p2.y - p0.y) / 6;
+         const cp2x = p2.x - (p3.x - p1.x) / 6;
+         const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+         if (i === 0) ctx.quadraticCurveTo(p1.x, p1.y, (p1.x + p2.x)/2, (p1.y + p2.y)/2);
+         else ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+        }
+         if(points.length > 0) ctx.lineTo(points[points.length-1].x, points[points.length-1].y);
+      }
+      ctx.strokeStyle = 'rgba(255, 200, 0, 0.2)';
+      ctx.lineWidth = 6;
       ctx.stroke();
     }
-  }, [calculateNewPosition]);
-  
-  const drawPlane = useCallback((ctx: CanvasRenderingContext2D, currentPlaneX: number, currentPlaneY: number, gameStatus: 'waiting' | 'flying' | 'crashed' | 'betting', currentMultiplierValue: number) => {
-    ctx.save();
+  }, []);
+
+  const drawPlane = useCallback((
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    status: string,
+    currentMultiplier: number
+  ) => {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-    const planeSize = 10 / dpr;
+    const planeSize = 12 / dpr;
+    
+    const path = pathPointsRef.current;
+    const prevPos = path.length > 1 ? path[path.length - 2] : (path.length === 1 ? {x: 50, y: (canvasRef.current?.height ?? 0)/(dpr*2) - 50} : {x, y: y + 0.1}); // Avoid y being same as current y for angle
+    const dx = x - prevPos.x;
+    const dy = y - prevPos.y;
+    let angle = Math.atan2(dy, dx);
+    if(dx === 0 && dy === 0 && currentMultiplier <= 1.01) angle = -Math.PI / 4;
 
-    const prevPos = calculateNewPosition(Math.max(1,currentMultiplierValue-0.015), canvasRef.current!); // Slightly behind for angle
-    let angle = Math.atan2(currentPlaneY - prevPos.y, currentPlaneX - prevPos.x);
-    if (currentPlaneX === prevPos.x && currentPlaneY === prevPos.y && currentMultiplierValue <= 1.01) angle = -Math.PI / 4;
 
-    ctx.translate(currentPlaneX, currentPlaneY);
+    const turnIntensity = Math.min(1, Math.max(-1, dx * 0.05)); 
+    const bankAngle = turnIntensity * (Math.PI / 7); 
+    
+    ctx.save();
+    ctx.translate(x, y);
     ctx.rotate(angle);
     
-    if (gameStatus === 'crashed') {
-      ctx.fillStyle = 'rgba(255, 50, 50, 0.9)';
-      for (let i = 0; i < 5; i++) {
-        const radius = (2 + Math.random() * 3) / dpr;
-        const smokeX = (-planeSize * 1.5 - Math.random() * planeSize) ;
-        const smokeY = (-planeSize * 0.5 + Math.random() * planeSize - planeSize * 0.5) ;
+    ctx.save();
+    ctx.rotate(bankAngle);
+    
+    if (status === 'crashed') {
+      for (let i = 0; i < 8; i++) {
+        const radius = (2 + Math.random() * 4) / dpr;
+        const smokeX = (-planeSize * 1.5 - Math.random() * planeSize * 1.5); 
+        const smokeY = (Math.random() * planeSize * 1.5 - planeSize * 0.75);
         ctx.beginPath();
         ctx.arc(smokeX, smokeY, radius, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(100, 100, 100, ${0.5 + Math.random() * 0.3})`;
+        ctx.fillStyle = i < 4 
+          ? `rgba(255, ${60 + Math.random() * 60}, 0, ${0.5 + Math.random() * 0.3})` 
+          : `rgba(80, 80, 80, ${0.4 + Math.random() * 0.3})`;
         ctx.fill();
       }
-    } else {
-      ctx.fillStyle = 'rgba(255, 200, 0, 1)';
-      if (gameStatus === 'flying' && currentMultiplierValue > 1.01) {
-        for (let i = 0; i < 3; i++) {
-          const lineLength = (planeSize*0.5 + Math.random() * planeSize) ;
-          const lineY = (-planeSize*0.3 + Math.random() * planeSize*0.6) ;
-          ctx.beginPath();
-          ctx.moveTo(-planeSize*0.8, lineY);
-          ctx.lineTo(-planeSize*0.8 - lineLength, lineY);
-          ctx.strokeStyle = `rgba(255, 100, 0, ${0.4 + Math.random() * 0.4})`;
-          ctx.lineWidth = (1 + Math.random()) / dpr;
-          ctx.stroke();
-        }
+    } else if (status === 'flying' && currentMultiplier > 1.02) {
+      for (let i = 0; i < 5; i++) {
+        const length = (planeSize * 0.8 + Math.random() * planeSize * 1.2);
+        const width = (0.8 + Math.random() * 1.2) / dpr;
+        const offsetY = (Math.random() * planeSize * 0.8 - planeSize * 0.4);
+        
+        ctx.beginPath();
+        ctx.moveTo(-planeSize*0.8, offsetY); 
+        ctx.lineTo(-planeSize*0.8 - length, offsetY);
+        ctx.strokeStyle = `rgba(255, ${120 + Math.random() * 80}, 0, ${0.4 + Math.random() * 0.4})`;
+        ctx.lineWidth = width;
+        ctx.stroke();
       }
     }
     
-    ctx.beginPath(); ctx.moveTo(planeSize, 0); ctx.lineTo(-planeSize, -planeSize * 0.5); ctx.lineTo(-planeSize * 0.7, 0); ctx.lineTo(-planeSize, planeSize * 0.5); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-planeSize*0.3, -planeSize*1.2); ctx.lineTo(-planeSize*0.6, -planeSize*1.2); ctx.lineTo(-planeSize*0.3, 0); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-planeSize*0.3, planeSize*1.2); ctx.lineTo(-planeSize*0.6, planeSize*1.2); ctx.lineTo(-planeSize*0.3, 0); ctx.closePath(); ctx.fill();
-    ctx.restore();
-    
-    if (gameStatus !== 'waiting' && gameStatus !== 'betting' ) {
-        ctx.font = `bold ${12/dpr}px Inter`;
-        ctx.fillStyle = gameStatus === 'crashed' ? 'rgba(255, 50, 50, 0.9)' : 'rgba(255, 255, 255, 0.95)';
-        ctx.textAlign = 'left';
-        ctx.shadowColor = "black";
-        ctx.shadowBlur = 2 / dpr;
-        ctx.fillText(`${currentMultiplierValue.toFixed(2)}x`, currentPlaneX + (15 / dpr), currentPlaneY + (5 / dpr));
-        ctx.shadowBlur = 0;
-    }
-  }, [calculateNewPosition]);
-
-  const drawCrashLine = useCallback((ctx: CanvasRenderingContext2D, logicalWidth: number, crashY: number, startX: number) => {
+    ctx.fillStyle = status === 'crashed' ? 'rgba(200, 50, 50, 0.9)' : 'rgba(255, 200, 0, 1)';
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+    ctx.moveTo(planeSize * 0.8, 0);
+    ctx.lineTo(-planeSize * 0.8, -planeSize * 0.4);
+    ctx.lineTo(-planeSize * 0.6, 0);
+    ctx.lineTo(-planeSize * 0.8, planeSize * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.fillStyle = status === 'crashed' ? 'rgba(180, 40, 40, 0.9)' : 'rgba(240, 170, 0, 1)'; // Slightly different wing color
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-planeSize * 0.3, -planeSize * 1.3);
+    ctx.lineTo(-planeSize * 0.7, -planeSize * 1.1);
+    ctx.lineTo(-planeSize * 0.3, 0);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-planeSize * 0.3, planeSize * 1.3);
+    ctx.lineTo(-planeSize * 0.7, planeSize * 1.1);
+    ctx.lineTo(-planeSize * 0.3, 0);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.beginPath(); // Tail Fin
+    ctx.moveTo(-planeSize * 0.7, 0);
+    ctx.lineTo(-planeSize, -planeSize * 0.6);
+    ctx.lineTo(-planeSize * 1.1, -planeSize * 0.5);
+    ctx.lineTo(-planeSize * 0.8, 0);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.restore(); 
+    
+    ctx.fillStyle = 'rgba(100, 200, 255, 0.7)';
+    ctx.beginPath();
+    ctx.ellipse(planeSize * 0.4, 0, planeSize*0.3, planeSize*0.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore(); 
+    
+    if (status !== 'waiting' && status !== 'betting') {
+      ctx.font = `bold ${14/dpr}px Inter`;
+      ctx.fillStyle = status === 'crashed' ? 'rgba(255, 80, 80, 1)' : 'rgba(255, 255, 255, 1)';
+      ctx.textAlign = 'left';
+      ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+      ctx.shadowBlur = 5 / dpr;
+      ctx.fillText(`${currentMultiplier.toFixed(2)}x`, x + (20 / dpr), y + (7 / dpr));
+      ctx.shadowBlur = 0;
+    }
+  }, []);
+
+  const drawCrashLine = useCallback((ctx: CanvasRenderingContext2D, logicalWidth: number, crashPlaneY: number, startX: number) => {
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)';
     ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.moveTo(startX, crashY);
-    ctx.lineTo(logicalWidth, crashY);
+    ctx.setLineDash([6, 6]);
+    ctx.moveTo(startX, crashPlaneY);
+    ctx.lineTo(logicalWidth - 20, crashPlaneY); // Draw up to the edge of graph area
     ctx.stroke();
     ctx.setLineDash([]);
   }, []);
 
-  const mainDrawGameRender = useCallback((ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+  const drawGame = useCallback((ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
     const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
     const logicalWidth = canvas.width / dpr;
     const logicalHeight = canvas.height / dpr;
     const startX = 50;
-    const startY = logicalHeight - 50; // Graph baseline Y
+    const startY = logicalHeight - 50;
     
-    ctx.clearRect(0, 0, canvas.width, canvas.height); // Use physical dimensions for clearing
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     drawGrid(ctx, logicalWidth, logicalHeight);
     drawAxes(ctx, logicalWidth, logicalHeight, startX, startY);
     
-    const currentDisplayMultiplier = canvasGameStatus === 'crashed' ? gameState.multiplier : smoothMultiplier;
-
-    if (canvasGameStatus === 'crashed') {
-      const crashLinePlotY = calculateYPositionOnGraph(gameState.multiplier, logicalHeight, startY);
-      drawCrashLine(ctx, logicalWidth, crashLinePlotY, startX);
+    const { x, y } = calculateNewPosition(smoothMultiplier, canvas);
+    
+    if (canvasGameStatus === 'flying' || (canvasGameStatus === 'crashed' && pathPointsRef.current.length > 0)) {
+       if (canvasGameStatus === 'flying' && (pathPointsRef.current.length === 0 || pathPointsRef.current[pathPointsRef.current.length -1].x < x )) {
+          pathPointsRef.current.push({x, y});
+          if (pathPointsRef.current.length > 150) { // Limit path points
+            pathPointsRef.current.shift();
+          }
+       }
+    } else if (canvasGameStatus !== 'flying' && canvasGameStatus !== 'crashed') {
+        pathPointsRef.current = []; // Clear path if not flying or just crashed
     }
     
-    drawPlanePath(ctx, startX, startY, currentDisplayMultiplier, canvasGameStatus, canvas);
+    drawCurvedPath(ctx, startX, startY, pathPointsRef.current, canvasGameStatus);
     
-    const { x, y } = calculateNewPosition(currentDisplayMultiplier, canvas);
-    drawPlane(ctx, x, y, canvasGameStatus, currentDisplayMultiplier);
-  }, [canvasGameStatus, gameState.multiplier, smoothMultiplier, drawGrid, drawAxes, drawPlanePath, drawPlane, calculateNewPosition, calculateYPositionOnGraph, drawCrashLine]);
-
+    const planeDrawX = (canvasGameStatus === 'crashed' && pathPointsRef.current.length > 0) ? pathPointsRef.current[pathPointsRef.current.length -1].x : x;
+    const planeDrawY = (canvasGameStatus === 'crashed' && pathPointsRef.current.length > 0) ? pathPointsRef.current[pathPointsRef.current.length -1].y : y;
+    drawPlane(ctx, planeDrawX, planeDrawY, canvasGameStatus, gameState.multiplier); // Use actual gameState.multiplier for text on crash
+    
+    if (canvasGameStatus === 'crashed') {
+        const crashYPos = (pathPointsRef.current.length > 0) ? pathPointsRef.current[pathPointsRef.current.length-1].y : calculateYPosition(gameState.multiplier, logicalHeight, startY) ;
+        drawCrashLine(ctx, logicalWidth, crashYPos, startX);
+    }
+  }, [canvasGameStatus, smoothMultiplier, gameState.multiplier, calculateNewPosition, calculateYPosition, drawGrid, drawAxes, drawCurvedPath, drawPlane, drawCrashLine ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
+    
     const handleResize = () => {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
       const rect = canvas.getBoundingClientRect();
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // Apply scaling for DPR
-      mainDrawGameRender(ctx, canvas); // Redraw after resize
+      drawGame(ctx, canvas);
     };
-
-    handleResize(); // Initial setup
+    
+    handleResize();
     window.addEventListener('resize', handleResize);
-
+    
     let localAnimationId: number;
     const renderLoop = () => {
-      mainDrawGameRender(ctx, canvas);
+      drawGame(ctx, canvas);
       localAnimationId = requestAnimationFrame(renderLoop);
     };
 
-    if (gameState.status === 'playing' || (gameState.status === 'crashed' && smoothMultiplier !== gameState.multiplier)) {
-       // Start RAF loop if playing, or if crashed and smoothMultiplier hasn't reached target yet
+    if (canvasGameStatus === 'flying' || (canvasGameStatus === 'crashed' && smoothMultiplier !== gameState.multiplier)) {
       localAnimationId = requestAnimationFrame(renderLoop);
     } else {
-      mainDrawGameRender(ctx, canvas); // Draw once for non-playing states or if already snapped
+      drawGame(ctx, canvas); 
     }
     
-    animationRef.current = localAnimationId; // Store for cleanup
+    animationRef.current = localAnimationId;
 
     return () => {
       window.removeEventListener('resize', handleResize);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
-       if (localAnimationId) { // Also cancel the loop-specific ID
+      if (localAnimationId) {
         cancelAnimationFrame(localAnimationId);
       }
     };
-  }, [mainDrawGameRender, gameState.status, smoothMultiplier, gameState.multiplier]);
+  }, [drawGame, canvasGameStatus, smoothMultiplier, gameState.multiplier]);
 
 
   return (
     <div className="w-full aspect-video relative overflow-hidden rounded-xl bg-gradient-to-br from-gray-900 to-gray-800 shadow-2xl">
-      <canvas 
-        ref={canvasRef}
-        className="w-full h-full"
+      <canvas ref={canvasRef} className="w-full h-full" 
         aria-label="Skytrax game animation"
       />
       
@@ -361,5 +472,3 @@ const GameCanvas = () => {
 };
 
 export default GameCanvas;
-
-    
