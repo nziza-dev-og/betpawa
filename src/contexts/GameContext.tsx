@@ -7,7 +7,18 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { useToast } from "@/hooks/use-toast"; // Corrected import path
 import { db, doc, updateDoc, increment, serverTimestamp, collection } from '@/lib/firebase';
 
-const CRASH_POINTS = [1.00, 1.01, 1.05, 1.10, 1.15, 1.20, 1.30, 1.40, 1.50, 1.75, 2.00, 2.25, 2.50, 3.00, 4.00, 5.00, 7.50, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 500, 1000];
+// Adjusted CRASH_POINTS for desired distribution
+const CRASH_POINTS = [
+  // Frequent: 1.00x to 5.00x
+  1.00, 1.02, 1.05, 1.08, 1.10, 1.13, 1.16, 1.19, 1.22, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50, 
+  1.60, 1.70, 1.80, 1.90, 2.00, 2.15, 2.30, 2.45, 2.60, 2.75, 2.90, 3.10, 3.30, 3.50, 3.75, 
+  4.00, 4.25, 4.50, 4.75, 5.00,
+  // Less Frequent: 5.00x to 15.00x
+  5.50, 6.00, 6.50, 7.00, 7.50, 8.00, 9.00, 10.00, 11.00, 12.50, 15.00,
+  // Rare: Above 15.00x
+  20.00, 25.00, 35.00, 50.00 
+];
+
 const BETTING_DURATION = 10; 
 const IDLE_DURATION = 5;
 const STARTING_DURATION = 3;
