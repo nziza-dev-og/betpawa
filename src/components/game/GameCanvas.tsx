@@ -1,24 +1,31 @@
 
 "use client";
 
-import dynamic from "next/dynamic";
+import { useGame } from '@/contexts/GameContext';
+import { GameDisplay } from '@/components/game/GameDisplay';
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Dynamically import the PlayCanvas embed component with ssr: false
-const PlayCanvasEmbedWithNoSSR = dynamic(
-  () => import('@/components/game/PlayCanvasEmbed'),
-  {
-    ssr: false,
-    loading: () => (
-      <Skeleton className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
-        <p className="text-muted-foreground">Loading 3D Experience...</p>
-      </Skeleton>
-    )
-  }
-);
-
 const GameCanvas = () => {
-  return <PlayCanvasEmbedWithNoSSR />;
+  const gameContext = useGame();
+
+  if (!gameContext) {
+    // This can happen briefly while GameProvider is initializing
+    return (
+      <Skeleton className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
+        <p className="text-muted-foreground">Loading Game Display...</p>
+      </Skeleton>
+    );
+  }
+
+  const { gameState, timeRemaining } = gameContext;
+
+  return (
+    <GameDisplay 
+      multiplier={gameState.multiplier} 
+      gamePhase={gameState.status} 
+      timeRemaining={timeRemaining} 
+    />
+  );
 };
 
 export default GameCanvas;
