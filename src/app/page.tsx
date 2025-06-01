@@ -2,7 +2,8 @@
 "use client";
 
 import { useState, useEffect, Suspense } from 'react';
-import dynamic from 'next/dynamic';
+// Import GameCanvas statically; it will handle its own dynamic loading of the R3F part.
+import GameCanvas from '@/components/game/GameCanvas'; 
 import { BetControls } from '@/components/game/BetControls';
 import { WalletDisplay } from '@/components/wallet/WalletDisplay';
 import { DepositModal } from '@/components/wallet/DepositModal';
@@ -17,15 +18,6 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { RecentBets } from '@/components/history/RecentBets';
 import { GameHistory } from '@/components/history/GameHistory';
 import { ThemeToggleButton } from '@/components/ThemeToggleButton';
-
-const GameCanvas = dynamic(() => import('@/components/game/GameCanvasInternal'), { 
-  ssr: false,
-  loading: () => (
-    <Skeleton className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
-      <p className="text-muted-foreground">Loading 3D Plane...</p>
-    </Skeleton>
-  )
-});
 
 interface SkytraxPageContentProps {
   user: FirebaseUser | null;
@@ -170,11 +162,8 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
       </header>
 
       <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
-        {/* The Suspense wrapper here might be for assets inside GameCanvas, which is fine.
-            The loading of GameCanvas itself is handled by next/dynamic's loading prop. */}
-        <Suspense fallback={<Skeleton className="w-full aspect-video rounded-lg bg-muted" />}>
-          <GameCanvas />
-        </Suspense>
+        {/* GameCanvas is now imported statically, it handles its own dynamic loading */}
+        <GameCanvas />
         <BetControls
           gamePhase={gameState.status}
           onBet={placeBet}
@@ -239,3 +228,5 @@ export default function SkytraxPage() {
     </GameProvider>
   );
 }
+
+    

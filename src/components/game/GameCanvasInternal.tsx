@@ -153,8 +153,7 @@ const GameCanvasComponentInternal = () => {
 
   if (!isClientMounted) {
     // Render a placeholder or null on the server/before hydration
-    // The parent dynamic import already has a Skeleton, so null might be fine here,
-    // or another minimal placeholder if desired.
+    // The parent dynamic import already has a Skeleton.
     return null; 
   }
 
@@ -229,3 +228,5 @@ const GameCanvasComponentInternal = () => {
 };
 
 export default GameCanvasComponentInternal;
+
+    
