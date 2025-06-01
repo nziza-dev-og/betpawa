@@ -16,11 +16,12 @@ import { GameProvider, useGame } from '@/contexts/GameContext';
 import type { User as FirebaseUser } from 'firebase/auth';
 import { RecentBets } from '@/components/history/RecentBets';
 import { GameHistory } from '@/components/history/GameHistory';
+import { ThemeToggleButton } from '@/components/ThemeToggleButton';
 
 const GameCanvas = dynamic(() => import('@/components/game/GameCanvas'), { 
   ssr: false,
   loading: () => (
-    <Skeleton className="w-full aspect-video rounded-lg bg-gray-800 flex items-center justify-center">
+    <Skeleton className="w-full aspect-video rounded-lg bg-muted flex items-center justify-center">
       <p className="text-muted-foreground">Loading 3D Plane...</p>
     </Skeleton>
   )
@@ -154,12 +155,15 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     <div className="flex flex-col items-center justify-start min-h-screen bg-background p-4 md:p-8 space-y-6 md:space-y-8">
       <header className="w-full max-w-4xl flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-4xl font-headline font-bold text-primary">Skytrax</h1>
-        <WalletDisplay
-          balance={userProfile?.walletBalance ?? 0}
-          onDepositClick={() => setIsDepositModalOpen(true)}
-          isLoading={loadingAuth && !userProfile} 
-          userName={userProfile?.displayName}
-        />
+        <div className="flex items-center gap-2 sm:gap-4">
+          <ThemeToggleButton />
+          <WalletDisplay
+            balance={userProfile?.walletBalance ?? 0}
+            onDepositClick={() => setIsDepositModalOpen(true)}
+            isLoading={loadingAuth && !userProfile} 
+            userName={userProfile?.displayName}
+          />
+        </div>
       </header>
 
       <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
@@ -229,4 +233,3 @@ export default function SkytraxPage() {
     </GameProvider>
   );
 }
-
