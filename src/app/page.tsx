@@ -12,7 +12,8 @@ import { db, doc, updateDoc, increment, addDoc, collection, serverTimestamp } fr
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-const CRASH_POINTS = [1.00, 1.02, 10, 20, 28, 100, 1000]; // Possible crash multipliers
+// Updated list of possible crash multipliers for more variety
+const CRASH_POINTS = [1.00, 1.01, 1.05, 1.10, 1.15, 1.20, 1.30, 1.40, 1.50, 1.75, 2.00, 2.25, 2.50, 3.00, 4.00, 5.00, 7.50, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 500, 1000];
 const BETTING_DURATION = 10; // seconds
 const IDLE_DURATION = 5; // seconds
 const STARTING_DURATION = 3; // seconds
