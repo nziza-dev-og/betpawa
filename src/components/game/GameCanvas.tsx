@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useGame } from '@/contexts/GameContext';
@@ -20,10 +19,10 @@ const GameCanvas = () => {
   const { gameState, timeRemaining } = gameContext;
 
   return (
-    <GameDisplay 
-      multiplier={gameState.multiplier} 
-      gamePhase={gameState.status} 
-      timeRemaining={timeRemaining} 
+    <GameDisplay
+      multiplier={gameState.multiplier}
+      gamePhase={gameState.status}
+      timeRemaining={timeRemaining}
     />
   );
 };

@@ -1,12 +1,12 @@
 
-import { Plane, XCircle, Timer } from 'lucide-react'; // CheckCircle removed as it's not used.
+import { Plane, XCircle, Timer } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import type { GamePhase } from '@/contexts/GameContext'; // Import GamePhase type
+import type { GamePhase } from '@/contexts/GameContext';
 
 interface GameDisplayProps {
   multiplier: number;
-  gamePhase: GamePhase; // Use GamePhase type
-  timeRemaining?: number; 
+  gamePhase: GamePhase;
+  timeRemaining?: number;
 }
 
 export function GameDisplay({ multiplier, gamePhase, timeRemaining }: GameDisplayProps) {
@@ -57,7 +57,7 @@ export function GameDisplay({ multiplier, gamePhase, timeRemaining }: GameDispla
         {gamePhase === 'playing' && IconComponent && (
            <IconComponent className={`h-20 w-20 mb-6 text-primary animate-fly`} data-ai-hint="plane sky" />
         )}
-        
+
         {/* Multiplier or Status Text */}
         {showMultiplier ? (
           <div className={`font-headline text-7xl font-bold ${gamePhase === 'crashed' ? 'text-destructive' : 'text-primary'}`}>
@@ -69,21 +69,11 @@ export function GameDisplay({ multiplier, gamePhase, timeRemaining }: GameDispla
             {statusText}
           </div>
         )}
-        
-        {/* Additional descriptive text for non-playing/crashed states if statusText is used above */}
-        { (gamePhase !== 'playing' && gamePhase !== 'crashed' && !showMultiplier) && (
-            <p className={`mt-2 text-center text-lg ${textColorClass}`}>{/* Redundant if statusText already shown above, kept for structure */}</p>
-        )}
-         { gamePhase === 'crashed' && !showMultiplier && ( // Should not happen as showMultiplier is true for crashed
-            <p className={`mt-2 text-center text-lg ${textColorClass}`}>Round Over</p>
-        )}
+
          { gamePhase === 'crashed' && showMultiplier && (
              <p className={`mt-2 text-center text-lg ${textColorClass}`}>Round Over</p>
          )}
-
-
       </CardContent>
     </Card>
   );
 }
-
