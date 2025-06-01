@@ -42,10 +42,10 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
       if (!isMuted && audioRef.current.paused) {
         // Attempt to play when unmuted
         audioRef.current.play().catch(error => {
-          console.warn("Audio play attempt failed. Error:", error, "Ensure the audio file exists at public/audio/background-beat.mp3 and your browser allows audio playback.");
+          console.warn("Audio play attempt failed. Error:", error, "Ensure the audio file exists at public/audio/background-beat.mp3 and your browser allows audio playback. User interaction might be required to start audio.");
           toast({
             title: "Audio Playback Issue",
-            description: "Could not play audio. Please check browser permissions or ensure the audio file is available. Try clicking the sound icon again.",
+            description: "Could not play audio. Please check browser permissions or ensure the audio file is available. Try clicking the sound icon again or interacting with the page.",
             variant: "default",
           });
         });
@@ -193,7 +193,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
         </div>
       </header>
 
-      <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
+      <main className="w-full max-w-5xl flex flex-col items-center space-y-6">
         <GameCanvas />
         <BetControls
           gamePhase={gameState.status}
