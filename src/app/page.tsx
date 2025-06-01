@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -31,7 +32,7 @@ interface BetRecord {
 }
 
 export default function SkytraxPage() {
-  const { user, userProfile, loadingAuth, setUserProfile } = useAuth();
+  const { user, userProfile, loadingAuth, authError, setUserProfile } = useAuth();
   const { toast } = useToast();
 
   const [gamePhase, setGamePhase] = useState<GamePhase>('idle');
@@ -126,19 +127,15 @@ export default function SkytraxPage() {
             return targetMultiplier; 
           }
           
-          // Increase multiplier. Example: 0.01 every ~16ms (60fps) for a linear increase feel.
-          // Or a time-based curve. For simplicity:
           const now = Date.now();
           const elapsed = (now - gameStartTime.current) / 1000; // seconds
-          // A simple curve: starts slow, gets faster. Adjust 0.05 and power for different curves.
-          // Let's try a slightly different curve: multiplier = 1 + 0.1 * t + 0.05 * t^1.5
           let newMultiplier = 1 + 0.1 * elapsed + 0.05 * Math.pow(elapsed, 1.5);
-          newMultiplier = Math.max(prevMultiplier, newMultiplier); // Ensure it doesn't go down
+          newMultiplier = Math.max(prevMultiplier, newMultiplier); 
           newMultiplier = parseFloat(newMultiplier.toFixed(2));
 
 
           if (newMultiplier >= targetMultiplier) {
-             return targetMultiplier; // Prepare to crash on next frame by returning target
+             return targetMultiplier; 
           }
           return newMultiplier;
         });
@@ -154,7 +151,7 @@ export default function SkytraxPage() {
     return () => {
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
-  }, [gamePhase, targetMultiplier, currentBet]);
+  }, [gamePhase, targetMultiplier, currentBet, toast]);
 
 
   const handleDeposit = async (amount: number) => {
@@ -172,7 +169,7 @@ export default function SkytraxPage() {
     } catch (error) {
       console.error("Deposit error:", error);
       toast({ title: "Deposit Failed", description: "Could not process your deposit.", variant: "destructive" });
-      throw error; // rethrow to be caught by modal
+      throw error; 
     }
   };
 
@@ -191,7 +188,6 @@ export default function SkytraxPage() {
     }
 
     try {
-      // Deduct bet amount from wallet
       const userDocRef = doc(db, 'users', user.uid);
       await updateDoc(userDocRef, {
         walletBalance: increment(-amount)
@@ -205,10 +201,6 @@ export default function SkytraxPage() {
         roundId: currentRoundId.current,
       };
       
-      // Store bet in Firestore (optional, but good for records)
-      // const betDocRef = await addDoc(collection(db, "bets"), newBet);
-      // newBet.id = betDocRef.id; // Store the ID if needed later
-
       setCurrentBet(newBet);
       setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance - amount } : null);
       toast({ title: "Bet Placed!", description: `Your bet of ${amount} COINS is active.` });
@@ -241,12 +233,8 @@ export default function SkytraxPage() {
         cashOutMultiplier: multiplier,
         winnings,
       };
-      // Update bet in Firestore (if you stored it)
-      // if(currentBet.id) {
-      //    await updateDoc(doc(db, "bets", currentBet.id), cashedOutBet);
-      // }
-
-      setCurrentBet(null); // Bet is now resolved
+      
+      setCurrentBet(null); 
       setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + winnings } : null);
       toast({ title: "Cashed Out!", description: `You won ${winnings.toFixed(2)} COINS at ${multiplier.toFixed(2)}x!` , variant: "default"});
     } catch (error) {
@@ -265,7 +253,6 @@ export default function SkytraxPage() {
             <CardDescription className="text-center">Loading your game...</CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
-             {/* You can use a Skeleton here or a simple loader */}
             <svg className="animate-spin h-10 w-10 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -276,14 +263,44 @@ export default function SkytraxPage() {
     );
   }
   
+  if (authError && (!user || !userProfile)) {
+    return (
+     <div className="flex items-center justify-center min-h-screen bg-background p-4">
+       <Card className="p-6 md:p-8 shadow-xl max-w-lg w-full">
+         <CardHeader>
+           <CardTitle className="text-2xl font-headline text-center text-destructive">Authentication Error</CardTitle>
+         </CardHeader>
+         <CardContent className="space-y-4">
+           <p className="text-center text-card-foreground bg-destructive/10 border border-destructive p-3 rounded-md">{authError}</p>
+           {authError.includes("Anonymous sign-in is not enabled") && (
+                <p className="text-sm text-muted-foreground text-center">
+                   To fix this, go to your <strong className="text-foreground">Firebase Console</strong>, navigate to Authentication, then the <strong className="text-foreground">Sign-in method</strong> tab, and enable the <strong className="text-foreground">Anonymous</strong> provider.
+                </p>
+           )}
+            <p className="text-sm text-muted-foreground mt-2 text-center">
+               After making the change in Firebase, please refresh this page.
+            </p>
+            <Button onClick={() => window.location.reload()} className="w-full mt-4">Refresh Page</Button>
+         </CardContent>
+       </Card>
+     </div>
+   );
+ }
+  
   if (!user || !userProfile) {
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
           <CardHeader>
             <CardTitle className="text-2xl font-headline text-center text-primary">Skytrax</CardTitle>
-            <CardDescription className="text-center">Error loading user data. Please refresh.</CardDescription>
+            <CardDescription className="text-center">Initializing session... If this problem persists, please refresh.</CardDescription>
           </CardHeader>
+           <CardContent className="flex justify-center">
+            <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </CardContent>
         </Card>
       </div>
     );
@@ -297,7 +314,7 @@ export default function SkytraxPage() {
         <WalletDisplay 
           balance={userProfile?.walletBalance ?? 0} 
           onDepositClick={() => setIsDepositModalOpen(true)}
-          isLoading={loadingAuth}
+          isLoading={loadingAuth} // Should be false here, but kept for safety
           userName={userProfile?.displayName}
         />
       </header>
@@ -327,3 +344,4 @@ export default function SkytraxPage() {
     </div>
   );
 }
+
