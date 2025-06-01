@@ -1,8 +1,8 @@
 
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
-// Import GameCanvas statically; it will handle its own dynamic loading of the R3F part.
+import { useState, useEffect, Suspense, useRef } from 'react';
+// Import GameCanvas directly as it handles its own dynamic loading of R3F part.
 import GameCanvas from '@/components/game/GameCanvas'; 
 import { BetControls } from '@/components/game/BetControls';
 import { WalletDisplay } from '@/components/wallet/WalletDisplay';
@@ -18,6 +18,7 @@ import type { User as FirebaseUser } from 'firebase/auth';
 import { RecentBets } from '@/components/history/RecentBets';
 import { GameHistory } from '@/components/history/GameHistory';
 import { ThemeToggleButton } from '@/components/ThemeToggleButton';
+import { Volume2, VolumeX } from 'lucide-react';
 
 interface SkytraxPageContentProps {
   user: FirebaseUser | null;
@@ -32,6 +33,28 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
   const gameContext = useGame();
 
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isMuted, setIsMuted] = useState(true); // Start muted
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = isMuted;
+      if (!isMuted && audioRef.current.paused) {
+        audioRef.current.play().catch(error => {
+          console.warn("Audio autoplay prevented:", error);
+          toast({
+            title: "Audio Paused",
+            description: "Click the sound icon to play background music.",
+            variant: "default",
+          });
+        });
+      }
+    }
+  }, [isMuted, toast]);
+
+  const toggleMute = () => {
+    setIsMuted(prev => !prev);
+  };
 
   const handleDeposit = async (amount: number) => {
     if (!user || !userProfile) {
@@ -148,9 +171,14 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
 
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-background p-4 md:p-8 space-y-6 md:space-y-8">
+      <audio ref={audioRef} src="/audio/background-beat.mp3" loop />
       <header className="w-full max-w-4xl flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-4xl font-headline font-bold text-primary">Skytrax</h1>
         <div className="flex items-center gap-2 sm:gap-4">
+          <Button variant="outline" size="icon" onClick={toggleMute} className="rounded-full w-9 h-9">
+            {isMuted ? <VolumeX className="h-[1.1rem] w-[1.1rem]" /> : <Volume2 className="h-[1.1rem] w-[1.1rem]" />}
+            <span className="sr-only">{isMuted ? "Unmute" : "Mute"}</span>
+          </Button>
           <ThemeToggleButton />
           <WalletDisplay
             balance={userProfile?.walletBalance ?? 0}
@@ -162,7 +190,6 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
       </header>
 
       <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
-        {/* GameCanvas is now imported statically, it handles its own dynamic loading */}
         <GameCanvas />
         <BetControls
           gamePhase={gameState.status}
@@ -228,5 +255,7 @@ export default function SkytraxPage() {
     </GameProvider>
   );
 }
+
+    
 
     
