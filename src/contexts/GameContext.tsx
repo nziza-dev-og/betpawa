@@ -5,7 +5,7 @@ import type { UserProfile } from '@/hooks/use-auth';
 import type { User as FirebaseUser } from 'firebase/auth';
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useToast } from "@/hooks/use-toast";
-import { db, doc, updateDoc, increment, serverTimestamp, collection, addDoc, query, orderBy, limit, getDocs } from '@/lib/firebase';
+import { db, doc, updateDoc, increment, serverTimestamp, collection, addDoc, query, orderBy, limit, getDocs, where } from '@/lib/firebase';
 
 const CRASH_POINTS = [
   1.00, 1.02, 1.05, 1.08, 1.10, 1.13, 1.16, 1.19, 1.22, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50,
@@ -55,7 +55,9 @@ export interface BetRecord {
 }
 
 export interface DisplayableBetRecord {
-  id: string;
+  id: string; // Firestore document ID
+  betId: string; // Original bet ID from BetRecord
+  userId: string;
   amount: number;
   timestamp: number; 
   status: 'won' | 'lost';
@@ -109,8 +111,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   const gameStartTime = useRef<number>(0);
   const currentRoundId = useRef<string>('');
   const lostBetToastShownRef = useRef<string | null>(null);
-  const betProcessedForHistory = useRef<string | null>(null);
-
+  
   const resetGameState = useCallback(() => {
     setMultiplier(1.00);
     setTargetMultiplier(0);
@@ -125,7 +126,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       setCurrentLocalBet(null);
     }
     lostBetToastShownRef.current = null;
-    betProcessedForHistory.current = null;
   }, [resetGameState, currentLocalBet]);
 
   
@@ -154,7 +154,7 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       });
 
       const newBet: BetRecord = {
-        id: doc(collection(db, 'userBets')).id,
+        id: doc(collection(db, 'userBets')).id, // This is the original bet ID
         userId: user.uid,
         amount,
         status: 'placed',
@@ -163,7 +163,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       };
 
       setCurrentLocalBet(newBet);
-      betProcessedForHistory.current = null; 
       if (setUserProfile) {
         setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance - amount } : null);
       }
@@ -203,24 +202,34 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       };
 
       setCurrentLocalBet(cashedOutBetData);
-
-      if (betProcessedForHistory.current !== cashedOutBetData.id && cashedOutBetData.id) {
-        const wonBetRecord: DisplayableBetRecord = {
-            id: cashedOutBetData.id,
-            amount: cashedOutBetData.amount,
-            timestamp: (cashedOutBetData.createdAt?.toDate?.() || new Date()).getTime(),
-            status: 'won',
-            profit: cashedOutBetData.winnings!,
-            cashoutAt: cashedOutBetData.cashOutMultiplier!,
-        };
-        setRecentBets(prev => [wonBetRecord, ...prev.slice(0, MAX_RECENT_BETS - 1)]);
-        betProcessedForHistory.current = wonBetRecord.id;
-      }
       
       if (setUserProfile) {
         setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + winnings } : null);
       }
       toast({ title: "Cashed Out!", description: `You won ${winnings.toFixed(2)} COINS at ${currentCashoutMultiplier.toFixed(2)}x!`, variant: "default" });
+
+      // Save to Firestore userBetHistory
+      if (cashedOutBetData.id) {
+        const betHistoryRecord = {
+          userId: user.uid,
+          betId: cashedOutBetData.id,
+          amount: cashedOutBetData.amount,
+          timestamp: serverTimestamp(), // Use serverTimestamp for Firestore
+          status: 'won',
+          profit: cashedOutBetData.winnings!,
+          cashoutAt: cashedOutBetData.cashOutMultiplier!,
+        };
+        const docRef = await addDoc(collection(db, 'userBetHistory'), betHistoryRecord);
+        
+        // Update local recentBets state
+        const displayRecord: DisplayableBetRecord = {
+            ...betHistoryRecord,
+            id: docRef.id, // Use Firestore doc ID
+            timestamp: new Date().getTime(), // For immediate local display
+        };
+        setRecentBets(prev => [displayRecord, ...prev.slice(0, MAX_RECENT_BETS - 1)]);
+      }
+
       return Promise.resolve();
     } catch (error) {
       console.error("Cashout error:", error);
@@ -230,7 +239,8 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
   }, [user, userProfile, currentLocalBet, gamePhase, multiplier, toast, setUserProfile]);
 
   useEffect(() => {
-    const fetchHistory = async () => {
+    const fetchInitialHistory = async () => {
+      // Fetch game crash history
       try {
         const historyQuery = query(
           collection(db, 'gameRounds'),
@@ -239,21 +249,51 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
         );
         const querySnapshot = await getDocs(historyQuery);
         const fetchedPoints = querySnapshot.docs.map(d => d.data().crashPoint as number);
-        setLastCrashPoints(fetchedPoints.reverse()); // To show oldest first if needed, or keep as is for newest first
+        setLastCrashPoints(fetchedPoints); 
       } catch (err) {
         console.error("Error fetching crash history:", err);
-        // Optionally set some default or empty history
+      }
+
+      // Fetch user's recent bets history
+      if (user) {
+        try {
+          const betsHistoryQuery = query(
+            collection(db, 'userBetHistory'),
+            where('userId', '==', user.uid),
+            orderBy('timestamp', 'desc'),
+            limit(MAX_RECENT_BETS)
+          );
+          const betsSnapshot = await getDocs(betsHistoryQuery);
+          const fetchedUserBets = betsSnapshot.docs.map(d => {
+            const data = d.data();
+            return {
+              id: d.id, // Firestore document ID
+              betId: data.betId,
+              userId: data.userId,
+              amount: data.amount,
+              timestamp: data.timestamp?.toDate?.().getTime() || new Date().getTime(),
+              status: data.status,
+              profit: data.profit,
+              cashoutAt: data.cashoutAt,
+              crashMultiplier: data.crashMultiplier,
+            } as DisplayableBetRecord;
+          });
+          setRecentBets(fetchedUserBets);
+        } catch (err) {
+          console.error("Error fetching user bet history:", err);
+        }
       }
     };
-    fetchHistory();
-    startNewRound(); // Initialize the first round
+
+    fetchInitialHistory();
+    startNewRound(); 
 
     return () => {
       if (gameLoopTimer.current) clearTimeout(gameLoopTimer.current);
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Fetch history only once on mount
+  }, [user]); // Rerun if user changes (e.g., login)
 
 
   useEffect(() => {
@@ -337,7 +377,6 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
       setTimeRemaining(CRASHED_DURATION);
       setLastCrashPoints(prev => [targetMultiplier, ...prev.slice(0, MAX_CRASH_POINTS_HISTORY - 1)]);
       
-      // Save to Firestore
       addDoc(collection(db, 'gameRounds'), {
         crashPoint: targetMultiplier,
         createdAt: serverTimestamp(),
@@ -351,38 +390,52 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
 
 
   useEffect(() => {
-    if (
-      gamePhase === 'crashed' &&
-      currentLocalBet?.status === 'lost' &&
-      currentLocalBet.amount > 0 &&
-      currentLocalBet.roundId &&
-      lostBetToastShownRef.current !== currentLocalBet.roundId &&
-      targetMultiplier > 0 
-    ) {
-      const lostAmount = currentLocalBet.amount;
-      const finalMultiplier = targetMultiplier;
-
-      toast({
-        title: "Bet Lost!",
-        description: `Crashed at ${finalMultiplier.toFixed(2)}x. You lost ${lostAmount.toFixed(2)} COINS.`,
-        variant: "destructive",
-      });
-      lostBetToastShownRef.current = currentLocalBet.roundId;
-
-      if (betProcessedForHistory.current !== currentLocalBet.id && currentLocalBet.id) {
-          const lostBetRecord: DisplayableBetRecord = {
-            id: currentLocalBet.id,
-            amount: currentLocalBet.amount,
-            timestamp: (currentLocalBet.createdAt?.toDate?.() || new Date()).getTime(),
-            status: 'lost',
-            profit: -currentLocalBet.amount,
-            crashMultiplier: finalMultiplier,
-          };
-          setRecentBets(prev => [lostBetRecord, ...prev.slice(0, MAX_RECENT_BETS - 1)]);
-          betProcessedForHistory.current = lostBetRecord.id;
-      }
-    }
-  }, [gamePhase, currentLocalBet, toast, targetMultiplier]);
+    const processLostBet = async () => {
+        if (
+          user &&
+          gamePhase === 'crashed' &&
+          currentLocalBet?.status === 'lost' &&
+          currentLocalBet.amount > 0 &&
+          currentLocalBet.roundId &&
+          lostBetToastShownRef.current !== currentLocalBet.roundId &&
+          targetMultiplier > 0 
+        ) {
+          const lostAmount = currentLocalBet.amount;
+          const finalMultiplier = targetMultiplier;
+    
+          toast({
+            title: "Bet Lost!",
+            description: `Crashed at ${finalMultiplier.toFixed(2)}x. You lost ${lostAmount.toFixed(2)} COINS.`,
+            variant: "destructive",
+          });
+          lostBetToastShownRef.current = currentLocalBet.roundId;
+    
+          if (currentLocalBet.id) {
+              const betHistoryRecord = {
+                  userId: user.uid,
+                  betId: currentLocalBet.id,
+                  amount: currentLocalBet.amount,
+                  timestamp: serverTimestamp(), // Use serverTimestamp
+                  status: 'lost',
+                  profit: -currentLocalBet.amount,
+                  crashMultiplier: finalMultiplier,
+              };
+              try {
+                const docRef = await addDoc(collection(db, 'userBetHistory'), betHistoryRecord);
+                const displayRecord: DisplayableBetRecord = {
+                    ...betHistoryRecord,
+                    id: docRef.id, // Use Firestore doc ID
+                    timestamp: new Date().getTime(), // For immediate local display
+                };
+                setRecentBets(prev => [displayRecord, ...prev.slice(0, MAX_RECENT_BETS - 1)]);
+              } catch (error) {
+                  console.error("Error saving lost bet to history:", error);
+              }
+          }
+        }
+    };
+    processLostBet();
+  }, [gamePhase, currentLocalBet, toast, targetMultiplier, user]);
 
 
   useEffect(() => {
