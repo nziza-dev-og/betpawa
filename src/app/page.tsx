@@ -2,24 +2,29 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import GameCanvas from '@/components/game/GameCanvas'; // Updated import
+import GameCanvas from '@/components/game/GameCanvas';
 import { BetControls } from '@/components/game/BetControls';
 import { WalletDisplay } from '@/components/wallet/WalletDisplay';
 import { DepositModal } from '@/components/wallet/DepositModal';
 import { useAuth, type UserProfile } from '@/hooks/use-auth';
 import { useToast } from "@/hooks/use-toast";
-import { db, doc, updateDoc, increment } from '@/lib/firebase'; // Removed unused imports
+import { db, doc, updateDoc, increment } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { GameProvider, useGame } from '@/contexts/GameContext'; // Import GameProvider and useGame
+import { GameProvider, useGame } from '@/contexts/GameContext';
+import type { User as FirebaseUser } from 'firebase/auth';
 
-// BetRecord definition is now in GameContext.tsx, ensure consistency or import if needed elsewhere
-// For SkytraxPage, we might not need BetRecord directly if GameContext handles it all.
+interface SkytraxPageContentProps {
+  user: FirebaseUser | null;
+  userProfile: UserProfile | null;
+  loadingAuth: boolean;
+  authError: string | null;
+  setUserProfile: React.Dispatch<React.SetStateAction<UserProfile | null>>;
+}
 
-function SkytraxPageContent() {
-  const { user, userProfile, loadingAuth, authError, setUserProfile } = useAuth();
+function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUserProfile }: SkytraxPageContentProps) {
   const { toast } = useToast();
-  const gameContext = useGame(); // Access game state and actions
+  const gameContext = useGame();
 
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
@@ -33,8 +38,6 @@ function SkytraxPageContent() {
       await updateDoc(userDocRef, {
         walletBalance: increment(amount)
       });
-      // userProfile state update is now handled by GameProvider if bet/cashout involves it,
-      // or still here for direct deposits.
       if (setUserProfile) {
           setUserProfile(prev => prev ? { ...prev, walletBalance: prev.walletBalance + amount } : null);
       }
@@ -42,11 +45,10 @@ function SkytraxPageContent() {
     } catch (error) {
       console.error("Deposit error:", error);
       toast({ title: "Deposit Failed", description: "Could not process your deposit.", variant: "destructive" });
-      throw error; 
+      throw error;
     }
   };
 
-  // Loading and error states from useAuth
   if (loadingAuth) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -65,7 +67,7 @@ function SkytraxPageContent() {
       </div>
     );
   }
-  
+
   if (authError && (!user || !userProfile)) {
     return (
      <div className="flex items-center justify-center min-h-screen bg-background p-4">
@@ -89,8 +91,8 @@ function SkytraxPageContent() {
      </div>
    );
  }
-  
-  if (!user || !userProfile) { // Fallback if somehow auth is done but profile not set (should be handled by useAuth/GameProvider init)
+
+  if (!user || !userProfile) {
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -109,7 +111,6 @@ function SkytraxPageContent() {
     );
   }
 
-  // If gameContext is not yet available (e.g., GameProvider is still initializing)
   if (!gameContext) {
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -135,33 +136,33 @@ function SkytraxPageContent() {
     <div className="flex flex-col items-center justify-start min-h-screen bg-background p-4 md:p-8 space-y-6 md:space-y-8">
       <header className="w-full max-w-4xl flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-4xl font-headline font-bold text-primary">Skytrax</h1>
-        <WalletDisplay 
-          balance={userProfile?.walletBalance ?? 0} 
+        <WalletDisplay
+          balance={userProfile?.walletBalance ?? 0}
           onDepositClick={() => setIsDepositModalOpen(true)}
-          isLoading={loadingAuth} 
+          isLoading={loadingAuth}
           userName={userProfile?.displayName}
         />
       </header>
 
-      <main className="w-full max-w-2xl flex flex-col items-center space-y-6"> {/* Increased max-width for canvas */}
-        <GameCanvas /> {/* GameCanvas reads from context */}
-        <BetControls 
-          gamePhase={gameState.status} // From context
-          onBet={placeBet} // From context
-          onCashout={cashOut} // From context
-          currentBetAmount={currentLocalBet?.amount ?? null} // From context
-          currentMultiplier={gameState.multiplier} // From context
+      <main className="w-full max-w-2xl flex flex-col items-center space-y-6">
+        <GameCanvas />
+        <BetControls
+          gamePhase={gameState.status}
+          onBet={placeBet}
+          onCashout={cashOut}
+          currentBetAmount={currentLocalBet?.amount ?? null}
+          currentMultiplier={gameState.multiplier}
           walletBalance={userProfile?.walletBalance ?? 0}
-          timeRemaining={timeRemaining} // From context, for betting phase display in BetControls
+          timeRemaining={timeRemaining}
         />
       </main>
 
-      <DepositModal 
+      <DepositModal
         isOpen={isDepositModalOpen}
         onClose={() => setIsDepositModalOpen(false)}
-        onDeposit={handleDeposit} // Remains in SkytraxPage
+        onDeposit={handleDeposit}
       />
-      
+
       <footer className="text-center text-muted-foreground text-sm mt-auto pt-8">
         <p>&copy; {new Date().getFullYear()} Skytrax. Play responsibly.</p>
         <p className="text-xs">All monetary values are in-game COINS and have no real world value.</p>
@@ -172,16 +173,14 @@ function SkytraxPageContent() {
 
 export default function SkytraxPage() {
   const { user, userProfile, setUserProfile, loadingAuth, authError } = useAuth();
-  
-  // Render GameProvider only when auth is resolved and user/profile are available (or auth error occurs)
-  // This ensures GameProvider gets valid initial props.
-  if (loadingAuth && !authError) { // Show loading screen until auth is resolved
+
+  if (loadingAuth && !authError && !userProfile) { // Initial loading, before GameProvider can be sure of userProfile
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
           <CardHeader>
             <CardTitle className="text-2xl font-headline text-center text-primary">Skytrax</CardTitle>
-            <CardDescription className="text-center">Authenticating...</CardDescription>
+            <CardDescription className="text-center">Authenticating & Loading Profile...</CardDescription>
           </CardHeader>
            <CardContent className="flex justify-center">
             <svg className="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -193,12 +192,17 @@ export default function SkytraxPage() {
       </div>
     );
   }
-  // If auth error, SkytraxPageContent will handle displaying it.
-  // If !user or !userProfile after loading and no error, SkytraxPageContent handles it.
-  // This ensures GameProvider always receives non-null user & userProfile if auth is successful.
+  // GameProvider needs non-null user and userProfile if auth succeeds.
+  // SkytraxPageContent handles display of authError or if user/profile somehow still null after loading.
   return (
     <GameProvider user={user} userProfile={userProfile} setUserProfile={setUserProfile}>
-      <SkytraxPageContent />
+      <SkytraxPageContent
+        user={user}
+        userProfile={userProfile}
+        loadingAuth={loadingAuth}
+        authError={authError}
+        setUserProfile={setUserProfile}
+      />
     </GameProvider>
   );
 }
