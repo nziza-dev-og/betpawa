@@ -13,8 +13,12 @@ const CRASH_POINTS = [
   1.00, 1.02, 1.05, 1.08, 1.10, 1.13, 1.16, 1.19, 1.22, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50, 
   1.60, 1.70, 1.80, 1.90, 2.00, 2.15, 2.30, 2.45, 2.60, 2.75, 2.90, 3.10, 3.30, 3.50, 3.75, 
   4.00, 4.25, 4.50, 4.75, 5.00,
+  1.00, 1.03, 1.06, 1.09, 1.11, 1.14, 1.17, 1.20, 1.23, 1.26, 1.31, 1.36, 1.41, 1.46, 1.51,
+  1.65, 1.75, 1.85, 1.95, 2.05, 2.20, 2.35, 2.50, 2.65, 2.80, 2.95, 3.15, 3.35, 3.55, 3.80,
+  4.05, 4.30, 4.55, 4.80, 5.00,
   // Less Frequent: 5.00x to 15.00x
   5.50, 6.00, 6.50, 7.00, 7.50, 8.00, 9.00, 10.00, 11.00, 12.50, 15.00,
+  5.25, 5.75, 6.25, 6.75, 7.25,
   // Rare: Above 15.00x
   20.00, 25.00, 35.00, 50.00 
 ];
@@ -159,8 +163,13 @@ export const GameProvider = ({ children, user, userProfile, setUserProfile }: Ga
             setGamePhase('crashed');
             setTimeRemaining(CRASHED_DURATION);
             if (currentLocalBet && currentLocalBet.status === 'placed') {
+              const lostAmount = currentLocalBet.amount;
               setCurrentLocalBet(prev => prev ? { ...prev, status: 'lost' } : null);
-              toast({ title: "Too Late!", description: `Crashed at ${targetMultiplier.toFixed(2)}x. Better luck next time!`, variant: "destructive" });
+              toast({ 
+                title: "Bet Lost!", 
+                description: `Crashed at ${targetMultiplier.toFixed(2)}x. You lost ${lostAmount.toFixed(2)} COINS.`, 
+                variant: "destructive" 
+              });
             }
             return targetMultiplier;
           }
