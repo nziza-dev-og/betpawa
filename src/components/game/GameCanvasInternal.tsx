@@ -4,13 +4,13 @@ import { useRef, Suspense, useState, useEffect } from 'react';
 import { Canvas, useFrame, type ThreeElements } from '@react-three/fiber';
 import { Text, Stars, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
-import { useGame, type ActiveBetContext, type GamePhase } from '../../contexts/GameContext'; // Ensure GamePhase is imported
-import { ActiveBet } from './ActiveBet'; // Ensure this path is correct
+// import { useGame, type ActiveBetContext, type GamePhase } from '../../contexts/GameContext'; // Temporarily comment out
+// import { ActiveBet } from './ActiveBet'; // Temporarily comment out
 
 // Define a type for the props of FlyingObject
 interface FlyingObjectProps {
   multiplier: number;
-  gamePhase: GamePhase;
+  gamePhase: string; // Simplified for now
 }
 
 function FlyingObject({ multiplier, gamePhase }: FlyingObjectProps) {
@@ -143,8 +143,8 @@ function FlyingObject({ multiplier, gamePhase }: FlyingObjectProps) {
 
 
 const GameCanvasComponentInternal = () => {
-  const { gameState, activeBets, timeRemaining } = useGame();
-  const canvasGameStatus = gameState.status; // Directly use context status
+  // const { gameState, activeBets, timeRemaining } = useGame(); // Temporarily commented out
+  // const canvasGameStatus = gameState.status; // Temporarily comment out
   const [isClientMounted, setIsClientMounted] = useState(false);
 
   useEffect(() => {
@@ -156,6 +156,11 @@ const GameCanvasComponentInternal = () => {
     // The parent dynamic import already has a Skeleton.
     return null; 
   }
+
+  // Simplified props for FlyingObject for this debugging step
+  const mockMultiplier = 2.50; 
+  const mockGamePhase = "playing"; // Options: "playing", "crashed", "idle" (or other valid GamePhase strings if needed for FlyingObject)
+
 
   return (
     <div className="w-full aspect-video relative overflow-hidden rounded-lg shadow-xl bg-gray-900">
@@ -181,52 +186,18 @@ const GameCanvasComponentInternal = () => {
           />
           <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
           
-          <FlyingObject multiplier={gameState.multiplier} gamePhase={canvasGameStatus} />
+          <FlyingObject multiplier={mockMultiplier} gamePhase={mockGamePhase} />
         </Suspense>
       </Canvas>
       
-      {canvasGameStatus === 'playing' && activeBets.length > 0 && (
-        <div className="absolute right-2 top-2 md:right-4 md:top-4 max-w-[150px] md:max-w-xs w-full space-y-1 md:space-y-2">
-          {activeBets.slice(0, 3).map((bet: ActiveBetContext) => (
-            <ActiveBet key={bet.id} betId={bet.id} amount={bet.amount} />
-          ))}
-          {activeBets.length > 3 && (
-            <div className="text-center text-xs text-gray-300 bg-black/30 p-1 rounded">
-              +{activeBets.length - 3} more
-            </div>
-          )}
-        </div>
-      )}
-      
-      {(canvasGameStatus === 'idle' || canvasGameStatus === 'starting' || canvasGameStatus === 'betting') && (
-        <div role="status" aria-live="polite" className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="text-center p-4 rounded-lg bg-background/30">
-            <div className="text-lg md:text-xl font-bold mb-1 md:mb-2 text-white">
-              {canvasGameStatus === 'betting' ? "Place Your Bets!" : 
-               canvasGameStatus === 'starting' ? "Get Ready!" : 
-               "Next Round In..."}
-            </div>
-            <div className="text-4xl md:text-5xl font-bold text-accent animate-pulse">
-              {timeRemaining}s
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {canvasGameStatus === 'crashed' && (
-        <div role="status" aria-live="polite" className="absolute inset-0 flex items-center justify-center bg-red-900/40 backdrop-blur-sm">
-          <div className="text-center p-4 rounded-lg bg-background/30">
-            <div className="text-2xl md:text-3xl font-bold text-red-400 mb-2 animate-pulse">
-              CRASHED @ {gameState.multiplier.toFixed(2)}x
-            </div>
-            <div className="text-sm text-gray-200">Next round starting soon...</div>
-          </div>
-        </div>
-      )}
+      {/* All overlay UI that depended on GameContext is temporarily removed for debugging */}
+      {/* For example:
+      {canvasGameStatus === 'playing' && activeBets.length > 0 && ( ... )}
+      {(canvasGameStatus === 'idle' || canvasGameStatus === 'starting' || canvasGameStatus === 'betting') && ( ... )}
+      {canvasGameStatus === 'crashed' && ( ... )}
+      */}
     </div>
   );
 };
 
 export default GameCanvasComponentInternal;
-
-    
