@@ -1,6 +1,5 @@
-
 "use client";
-import { useRef, Suspense } from 'react';
+import { useRef, Suspense, useState, useEffect } from 'react';
 import { Canvas, useFrame, type ThreeElements } from '@react-three/fiber';
 import { Text, Stars, Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
@@ -142,9 +141,21 @@ function FlyingObject({ multiplier, gamePhase }: FlyingObjectProps) {
 }
 
 
-const GameCanvasComponent = () => {
+const GameCanvasComponentInternal = () => {
   const { gameState, activeBets, timeRemaining } = useGame();
   const canvasGameStatus = gameState.status; // Directly use context status
+  const [isClientMounted, setIsClientMounted] = useState(false);
+
+  useEffect(() => {
+    setIsClientMounted(true);
+  }, []);
+
+  if (!isClientMounted) {
+    // Render a placeholder or null on the server/before hydration
+    // The parent dynamic import already has a Skeleton, so null might be fine here,
+    // or another minimal placeholder if desired.
+    return null; 
+  }
 
   return (
     <div className="w-full aspect-video relative overflow-hidden rounded-lg shadow-xl bg-gray-900">
@@ -216,4 +227,4 @@ const GameCanvasComponent = () => {
   );
 };
 
-export default GameCanvasComponent;
+export default GameCanvasComponentInternal;
