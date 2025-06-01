@@ -13,6 +13,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { GameProvider, useGame } from '@/contexts/GameContext';
 import type { User as FirebaseUser } from 'firebase/auth';
+import { RecentBets } from '@/components/history/RecentBets';
+import { GameHistory } from '@/components/history/GameHistory';
 
 interface SkytraxPageContentProps {
   user: FirebaseUser | null;
@@ -49,7 +51,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     }
   };
 
-  if (loadingAuth) {
+  if (loadingAuth && !userProfile && !authError) { // Show this only if no profile AND no error yet
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -92,7 +94,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
    );
  }
 
-  if (!user || !userProfile) {
+  if (!user || !userProfile) { // Catch-all if user/profile still null after loading phase and no specific authError shown above
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -111,7 +113,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
     );
   }
 
-  if (!gameContext) {
+  if (!gameContext) { // Should be available if user & userProfile are loaded
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
          <Card className="p-8 shadow-xl">
@@ -139,7 +141,7 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
         <WalletDisplay
           balance={userProfile?.walletBalance ?? 0}
           onDepositClick={() => setIsDepositModalOpen(true)}
-          isLoading={loadingAuth}
+          isLoading={loadingAuth && !userProfile} // Loading if auth is running AND profile not yet loaded
           userName={userProfile?.displayName}
         />
       </header>
@@ -155,6 +157,10 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
           walletBalance={userProfile?.walletBalance ?? 0}
           timeRemaining={timeRemaining}
         />
+         <div className="w-full space-y-4 mt-6">
+          <RecentBets />
+          <GameHistory />
+        </div>
       </main>
 
       <DepositModal
@@ -174,7 +180,8 @@ function SkytraxPageContent({ user, userProfile, loadingAuth, authError, setUser
 export default function SkytraxPage() {
   const { user, userProfile, setUserProfile, loadingAuth, authError } = useAuth();
 
-  if (loadingAuth && !authError && !userProfile) { // Initial loading, before GameProvider can be sure of userProfile
+  // This initial loading state handles the period before useAuth has determined user/profile status.
+  if (loadingAuth && !userProfile && !authError) { 
      return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <Card className="p-8 shadow-xl">
@@ -192,14 +199,14 @@ export default function SkytraxPage() {
       </div>
     );
   }
-  // GameProvider needs non-null user and userProfile if auth succeeds.
-  // SkytraxPageContent handles display of authError or if user/profile somehow still null after loading.
+  // GameProvider and SkytraxPageContent will handle further conditional rendering based on authError or if user/profile are still null.
+  // It's assumed that if loadingAuth is false, user and userProfile (or authError) should be definitively set.
   return (
     <GameProvider user={user} userProfile={userProfile} setUserProfile={setUserProfile}>
       <SkytraxPageContent
         user={user}
         userProfile={userProfile}
-        loadingAuth={loadingAuth}
+        loadingAuth={loadingAuth} // Pass down loadingAuth
         authError={authError}
         setUserProfile={setUserProfile}
       />
